@@ -82,6 +82,9 @@ const state = {
   readingPlayerRetryTimer: 0,
   readingMiniDismissTimer: 0,
   readingControlsHideTimer: 0,
+  readingControlsRecoveryTimer: 0,
+  readingControlsRecoveryInFlight: false,
+  readingControlsLastRecoverAt: 0,
   readingControlsHoverHost: null,
   readingVideoEventsBound: false,
   readingLayoutBound: false,
@@ -1574,6 +1577,11 @@ async function ensureReaderPlayerMounted({ retries = 1, delayMs = 100, forceLayo
         await ensureReaderPlayerControlsRecovered(activeHost, {
           reason: attempt > 0 ? "mount-retry" : "mount"
         });
+        queueEnsureReaderPlayerControlsRecovered({
+          reason: attempt > 0 ? "post-mount-retry" : "post-mount",
+          delayMs: 220,
+          minIntervalMs: 240
+        });
       }
       if (document.pictureInPictureElement) {
         document.exitPictureInPicture().catch(() => {});
@@ -2260,6 +2268,10 @@ function layoutReaderPlayerHost() {
     readingView.style.setProperty("--boc-reader-player-rendered-width", `${Math.round(renderedWidth)}px`);
     readingView.style.setProperty("--boc-reader-player-rendered-height", `${Math.round(renderedHeight)}px`);
     updateReadingTranscriptTailSpacer();
+    queueEnsureReaderPlayerControlsRecovered({
+      reason: "layout-native",
+      delayMs: 120
+    });
     return;
   }
 
@@ -2318,6 +2330,11 @@ function cleanupReaderPlayerHostNode(playerHost) {
 function cleanupReaderPlayerHost() {
   restoreReaderPlayerContainer();
   unbindReaderPlayerControlsHover();
+  if (state.readingControlsRecoveryTimer) {
+    window.clearTimeout(state.readingControlsRecoveryTimer);
+    state.readingControlsRecoveryTimer = 0;
+  }
+  state.readingControlsRecoveryInFlight = false;
   const readingView = byId(ids.readingView);
   readingView?.style.removeProperty("--boc-reader-player-rendered-width");
   readingView?.style.removeProperty("--boc-reader-player-rendered-height");
@@ -2352,6 +2369,11 @@ function stopReadingViewSync() {
     window.clearTimeout(state.readingControlsHideTimer);
     state.readingControlsHideTimer = 0;
   }
+  if (state.readingControlsRecoveryTimer) {
+    window.clearTimeout(state.readingControlsRecoveryTimer);
+    state.readingControlsRecoveryTimer = 0;
+  }
+  state.readingControlsRecoveryInFlight = false;
   if (state.readingPlayerMountTimer) {
     window.clearTimeout(state.readingPlayerMountTimer);
     state.readingPlayerMountTimer = 0;
@@ -2435,6 +2457,11 @@ function bindReadingViewVideo(video = getRuntimeVideoElement()) {
       }
       if (event?.type === "seeked") {
         state.readingNextScrollBehavior = "auto";
+        queueEnsureReaderPlayerControlsRecovered({
+          reason: "seeked",
+          delayMs: 140,
+          minIntervalMs: 320
+        });
       }
       const latestHost = findReaderPlayerHost(video);
       if (latestHost && latestHost !== state.readingPlayerHost) {
@@ -2921,6 +2948,52 @@ function hasReaderPlayerControlsIssue(playerHost = state.readingPlayerHost) {
 
   const snapshot = getReaderPlayerControlsState(playerHost);
   return snapshot.hostHasNoCursor || (snapshot.anyPresent && snapshot.anyHidden);
+}
+
+function queueEnsureReaderPlayerControlsRecovered({
+  reason = "unknown",
+  delayMs = 120,
+  minIntervalMs = 480
+} = {}) {
+  if (!state.readingViewOpen || !state.readingNativePageMode || isWatchlaterPage()) {
+    return;
+  }
+  const playerHost = state.readingPlayerHost;
+  if (!playerHost?.isConnected || state.readingControlsRecoveryInFlight) {
+    return;
+  }
+
+  const now = Date.now();
+  if (state.readingControlsRecoveryTimer) {
+    return;
+  }
+  if (now - state.readingControlsLastRecoverAt < minIntervalMs) {
+    return;
+  }
+
+  state.readingControlsRecoveryTimer = window.setTimeout(() => {
+    state.readingControlsRecoveryTimer = 0;
+    if (!state.readingViewOpen || !state.readingNativePageMode || isWatchlaterPage()) {
+      return;
+    }
+    const activeHost = state.readingPlayerHost;
+    if (!activeHost?.isConnected || !hasReaderPlayerControlsIssue(activeHost)) {
+      return;
+    }
+
+    state.readingControlsRecoveryInFlight = true;
+    state.readingControlsLastRecoverAt = Date.now();
+    ensureReaderPlayerControlsRecovered(activeHost, {
+      reason,
+      retryDelayMs: 120
+    })
+      .catch((error) => {
+        logWarn("[BOC] queued reader controls recovery failed", { reason, error });
+      })
+      .finally(() => {
+        state.readingControlsRecoveryInFlight = false;
+      });
+  }, delayMs);
 }
 
 function setReaderPlayerControlsVisible(visible, playerHost = state.readingPlayerHost) {
