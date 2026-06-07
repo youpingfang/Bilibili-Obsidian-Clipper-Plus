@@ -841,7 +841,7 @@ async function refreshClip() {
     state.title = meta.title || readVideoTitle();
     state.author = meta.author || readVideoAuthor();
     state.uploadDate = meta.uploadDate || readUploadDate();
-    state.description = meta.description || "";
+    state.description = meta.description || readVideoDescription();
     state.pageCount = Array.isArray(meta.pages) ? meta.pages.length : 0;
     state.currentClipSignature = computeCurrentClipSignature();
     let resolvedPageIndex = pageIndex;
@@ -4013,6 +4013,20 @@ function readVideoAuthor() {
 
   const author = document.querySelector('meta[name="author"]');
   return author?.getAttribute("content")?.trim() || "";
+}
+
+function readVideoDescription() {
+  const descNode = document.querySelector(
+    ".desc-info-text, .video-desc .desc-info-text, .video-info-detail .text, .basic-desc-info"
+  );
+  if (descNode?.textContent?.trim()) {
+    return descNode.textContent.trim();
+  }
+
+  const metaDesc =
+    document.querySelector('meta[name="description"]') ||
+    document.querySelector('meta[property="og:description"]');
+  return metaDesc?.getAttribute("content")?.trim() || "";
 }
 
 function readUploadDate() {
