@@ -3578,7 +3578,7 @@ function onReadingTranscriptClick(event) {
   jumpReadingTarget(target.dataset.seconds);
 }
 
-function noteManualReaderInteraction(durationMs = 7000) {
+function noteManualReaderInteraction(durationMs = 3000) {
   if (!state.readingAutoScroll) {
     updateReaderFollowState();
     return;
