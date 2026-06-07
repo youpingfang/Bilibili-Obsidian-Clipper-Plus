@@ -88,6 +88,8 @@ const state = {
   readingControlsRecoveryInFlight: false,
   readingControlsLastRecoverAt: 0,
   readingControlsHoverHost: null,
+  readingHeaderHoverHost: null,
+  readingHeaderHideTimer: 0,
   readingVideoEventsBound: false,
   readingLayoutBound: false,
   uiEventsBound: false,
@@ -1492,6 +1494,7 @@ function finishEnterReaderMode() {
   maybeRefreshReaderSubtitleInBackground();
   syncReaderModeAfterMount();
   settleReaderModePresentation();
+  bindReaderHeaderActionsHover();
 }
 
 function openReaderViewShell(readingView = byId(ids.readingView)) {
@@ -2387,6 +2390,7 @@ function cleanupReaderPlayerHostNode(playerHost) {
 function cleanupReaderPlayerHost() {
   restoreReaderPlayerContainer();
   unbindReaderPlayerControlsHover();
+  unbindReaderHeaderActionsHover();
   if (state.readingControlsRecoveryTimer) {
     window.clearTimeout(state.readingControlsRecoveryTimer);
     state.readingControlsRecoveryTimer = 0;
@@ -3240,6 +3244,85 @@ function unbindReaderPlayerControlsHover() {
   delete playerHost.__bocReaderControlsHoverBound;
   setReaderPlayerControlsVisible(false, playerHost);
   state.readingControlsHoverHost = null;
+}
+
+function setReaderHeaderActionsVisible(visible) {
+  const actions = document.querySelector(".boc-reading-actions");
+  if (!actions) {
+    return;
+  }
+  if (visible) {
+    actions.removeAttribute("data-boc-icon-hidden");
+    return;
+  }
+  actions.setAttribute("data-boc-icon-hidden", "1");
+}
+
+function scheduleReaderHeaderActionsHide(delayMs = 10000) {
+  if (state.readingHeaderHideTimer) {
+    window.clearTimeout(state.readingHeaderHideTimer);
+    state.readingHeaderHideTimer = 0;
+  }
+  state.readingHeaderHideTimer = window.setTimeout(() => {
+    state.readingHeaderHideTimer = 0;
+    if (!state.readingViewOpen) {
+      return;
+    }
+    setReaderHeaderActionsVisible(false);
+  }, delayMs);
+}
+
+function bindReaderHeaderActionsHover() {
+  if (!state.readingViewOpen) {
+    return;
+  }
+  const header = document.querySelector(".boc-reading-header");
+  if (!header || header.__bocReaderHeaderHoverBound) {
+    state.readingHeaderHoverHost = header || null;
+    return;
+  }
+
+  const showActions = () => {
+    if (!state.readingViewOpen) {
+      return;
+    }
+    if (state.readingHeaderHideTimer) {
+      window.clearTimeout(state.readingHeaderHideTimer);
+      state.readingHeaderHideTimer = 0;
+    }
+    setReaderHeaderActionsVisible(true);
+  };
+  const hideActionsLater = () => {
+    if (!state.readingViewOpen) {
+      return;
+    }
+    scheduleReaderHeaderActionsHide();
+  };
+
+  header.addEventListener("mouseenter", showActions, true);
+  header.addEventListener("mouseleave", hideActionsLater, true);
+  header.__bocReaderHeaderHoverBound = { showActions, hideActionsLater };
+  state.readingHeaderHoverHost = header;
+  setReaderHeaderActionsVisible(true);
+  scheduleReaderHeaderActionsHide();
+}
+
+function unbindReaderHeaderActionsHover() {
+  const header = state.readingHeaderHoverHost;
+  if (state.readingHeaderHideTimer) {
+    window.clearTimeout(state.readingHeaderHideTimer);
+    state.readingHeaderHideTimer = 0;
+  }
+  if (!header?.__bocReaderHeaderHoverBound) {
+    state.readingHeaderHoverHost = null;
+    return;
+  }
+  const { showActions, hideActionsLater } = header.__bocReaderHeaderHoverBound;
+  header.removeEventListener("mouseenter", showActions, true);
+  header.removeEventListener("mouseleave", hideActionsLater, true);
+  delete header.__bocReaderHeaderHoverBound;
+  state.readingHeaderHoverHost = null;
+  setReaderHeaderActionsVisible(true);
 }
 
 function isVisibleReaderControl(node) {

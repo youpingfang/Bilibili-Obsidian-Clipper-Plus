@@ -247,6 +247,18 @@
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  transition: opacity 0.2s ease;
+}
+
+.boc-reading-actions[data-boc-icon-hidden="1"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boc-reading-actions {
+    transition: none;
+  }
 }
 
 .boc-reading-actions button,
