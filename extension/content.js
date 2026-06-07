@@ -2012,11 +2012,11 @@ function renderReadingInfoPanel() {
     descriptionBtn.hidden = true;
   } else {
     descriptionNode.textContent = description;
+    const fullScrollHeight = descriptionNode.scrollHeight;
+    descriptionNode.classList.add("is-collapsed");
+    const clampedClientHeight = descriptionNode.clientHeight;
     descriptionNode.classList.toggle("is-collapsed", !state.readingDescriptionExpanded);
-    const computed = window.getComputedStyle(descriptionNode);
-    const lineHeight = Number.parseFloat(computed.lineHeight) || 20;
-    const clampHeight = lineHeight * 5;
-    const hasOverflow = descriptionNode.scrollHeight > clampHeight + 2;
+    const hasOverflow = fullScrollHeight > clampedClientHeight + 2;
     if (!hasOverflow) {
       descriptionNode.classList.remove("is-collapsed");
       descriptionBtn.hidden = true;
