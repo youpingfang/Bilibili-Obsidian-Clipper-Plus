@@ -1511,10 +1511,29 @@ function maybeRefreshReaderSubtitleInBackground() {
   if (state.subtitleBody.length) {
     return;
   }
-  refreshClip().catch((error) => {
-    if (!isStaleRunError(error)) {
-      renderReadingStatus(`字幕加载失败：${getErrorMessage(error)}`);
-    }
+  waitForVideoMetadata().then(() => {
+    refreshClip().catch((error) => {
+      if (!isStaleRunError(error)) {
+        renderReadingStatus(`字幕加载失败：${getErrorMessage(error)}`);
+      }
+    });
+  });
+}
+
+function waitForVideoMetadata(timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const check = () => {
+      const video = getRuntimeVideoElement();
+      const duration = Number(video?.duration);
+      const ready = video && Number.isFinite(duration) && duration > 0;
+      if (ready || Date.now() - start >= timeoutMs) {
+        resolve();
+        return;
+      }
+      window.setTimeout(check, 150);
+    };
+    check();
   });
 }
 
