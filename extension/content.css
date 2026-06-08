@@ -1028,6 +1028,10 @@ body[data-boc-reading-active="1"] .bpx-player-sending-bar {
   display: none !important;
 }
 
+body[data-boc-reading-active="1"] [data-boc-reader-fading] {
+  visibility: hidden !important;
+}
+
 body[data-boc-reader-mode="1"] #boc-reading-view {
   background: transparent;
 }

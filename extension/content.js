@@ -1452,10 +1452,20 @@ async function enterReaderMode() {
   openReaderViewShell(readingView);
   applyReaderPageFocus();
   renderReadingView();
+
+  const earlyPlayerHost = findReaderPlayerHost(getRuntimeVideoElement());
+  if (earlyPlayerHost) {
+    earlyPlayerHost.setAttribute("data-boc-reader-fading", "1");
+  }
+
   await sleep(0);
 
   // Try to mount player, with more retries for slower pages (like watch later)
   const mounted = await ensureReaderPlayerMounted({ retries: 50, delayMs: 150, forceLayout: true });
+  const mountedPlayerHost = state.readingPlayerHost || earlyPlayerHost;
+  if (mountedPlayerHost) {
+    mountedPlayerHost.removeAttribute("data-boc-reader-fading");
+  }
   if (!mounted) {
     // Don't throw - keep UI open and keep retrying in background
     renderReadingStatus("正在等待视频播放器就绪...");
@@ -1476,6 +1486,10 @@ function scheduleReaderPlayerRetry() {
     state.readingPlayerRetryTimer = 0;
     if (!state.readingViewOpen || !isReaderMode()) return;
     const mounted = await ensureReaderPlayerMounted({ retries: 10, delayMs: 200, forceLayout: true });
+    const retryHost = state.readingPlayerHost;
+    if (retryHost) {
+      retryHost.removeAttribute("data-boc-reader-fading");
+    }
     if (mounted) {
       finishEnterReaderMode();
     } else if (state.readingViewOpen) {
