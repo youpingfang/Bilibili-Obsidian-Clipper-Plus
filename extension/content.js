@@ -1694,6 +1694,15 @@ function closeReadingView() {
   unbindReaderLayout();
   cleanupReaderPlayerHost();
   clearReaderPageFocus();
+  const sendingBar = document.querySelector(".bpx-player-sending-bar");
+  if (sendingBar) {
+    sendingBar.setAttribute("data-boc-reader-hide-sending-bar", "1");
+    sendingBar.style.setProperty("display", "none", "important");
+    window.setTimeout(() => {
+      sendingBar.style.removeProperty("display");
+      sendingBar.removeAttribute("data-boc-reader-hide-sending-bar");
+    }, 200);
+  }
   window.setTimeout(() => cleanupReaderFloatingArtifacts(), 40);
   window.setTimeout(() => cleanupReaderFloatingArtifacts(), 220);
 }
