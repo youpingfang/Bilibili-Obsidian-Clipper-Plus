@@ -48,6 +48,8 @@ async function init() {
 }
 
 function bindEvents() {
+  bindEmbeddedDragHandle();
+
   el.refreshBtn.addEventListener("click", async () => {
     await refreshFromTab();
   });
@@ -182,6 +184,46 @@ function bindEvents() {
   el.settingsBtn.addEventListener("click", async () => {
     await sendToRuntime({ type: "open-options" });
   });
+}
+
+function bindEmbeddedDragHandle() {
+  if (!isEmbeddedPopup()) {
+    return;
+  }
+  const header = document.querySelector(".top");
+  if (!header) {
+    return;
+  }
+  header.style.cursor = "move";
+  header.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button, input, select, textarea, a")) {
+      return;
+    }
+    event.preventDefault();
+    header.setPointerCapture?.(event.pointerId);
+    postEmbeddedDragMessage("drag-start", event);
+  });
+  header.addEventListener("pointermove", (event) => {
+    if (!header.hasPointerCapture?.(event.pointerId)) {
+      return;
+    }
+    postEmbeddedDragMessage("drag-move", event);
+  });
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((type) => {
+    header.addEventListener(type, (event) => postEmbeddedDragMessage("drag-end", event));
+  });
+}
+
+function postEmbeddedDragMessage(type, event) {
+  window.parent.postMessage(
+    {
+      source: "boc-embedded-popup",
+      type,
+      clientX: event.clientX,
+      clientY: event.clientY
+    },
+    "*"
+  );
 }
 
 function getCurrentOutput(payload, settings = latestSettings) {

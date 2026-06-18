@@ -843,12 +843,12 @@ function toggleEmbeddedPopup(tabId) {
   host.id = "boc-embedded-popup-host";
   host.style.cssText = [
     "position:fixed",
-    "right:16px",
+    "left:calc(100vw - 656px)",
     "top:72px",
     "width:640px",
     "height:560px",
-    "max-width:calc(100vw - 24px)",
-    "max-height:calc(100vh - 88px)",
+    "min-width:420px",
+    "min-height:360px",
     "z-index:2147483647",
     "border-radius:14px",
     "box-shadow:0 24px 46px rgba(0,0,0,.24)",
@@ -863,15 +863,20 @@ function toggleEmbeddedPopup(tabId) {
   frame.title = "Bilibili Obsidian Clipper";
   frame.style.cssText = "width:100%;height:100%;border:0;display:block;background:#f1f1f1";
   host.appendChild(frame);
+  appendEmbeddedPopupResizeHandles(host);
   document.documentElement.appendChild(host);
+  clampEmbeddedPopupToViewport(host);
 
   window.setTimeout(() => {
     document.addEventListener("pointerdown", handleEmbeddedPopupOutsidePointerDown, true);
+    window.addEventListener("message", handleEmbeddedPopupMessage);
   }, 0);
 }
 
 function closeEmbeddedPopup() {
+  stopEmbeddedPopupInteraction();
   document.removeEventListener("pointerdown", handleEmbeddedPopupOutsidePointerDown, true);
+  window.removeEventListener("message", handleEmbeddedPopupMessage);
   document.getElementById("boc-embedded-popup-host")?.remove();
 }
 
@@ -884,6 +889,167 @@ function handleEmbeddedPopupOutsidePointerDown(event) {
   if (!host.contains(event.target)) {
     closeEmbeddedPopup();
   }
+}
+
+function appendEmbeddedPopupResizeHandles(host) {
+  ["n", "e", "s", "w", "ne", "nw", "se", "sw"].forEach((edge) => {
+    const handle = document.createElement("div");
+    handle.dataset.bocResizeEdge = edge;
+    handle.style.cssText = getEmbeddedPopupResizeHandleStyle(edge);
+    handle.addEventListener("pointerdown", startEmbeddedPopupResize);
+    host.appendChild(handle);
+  });
+}
+
+function getEmbeddedPopupResizeHandleStyle(edge) {
+  const cursor = `${edge}-resize`;
+  const common = ["position:absolute", "z-index:2", `cursor:${cursor}`, "background:transparent"];
+  const size = 12;
+  const corner = 18;
+  const styles = {
+    n: [`top:0`, `left:${corner}px`, `right:${corner}px`, `height:${size}px`],
+    e: [`top:${corner}px`, `right:0`, `bottom:${corner}px`, `width:${size}px`],
+    s: [`left:${corner}px`, `right:${corner}px`, `bottom:0`, `height:${size}px`],
+    w: [`top:${corner}px`, `left:0`, `bottom:${corner}px`, `width:${size}px`],
+    ne: [`top:0`, `right:0`, `width:${corner}px`, `height:${corner}px`],
+    nw: [`top:0`, `left:0`, `width:${corner}px`, `height:${corner}px`],
+    se: [`right:0`, `bottom:0`, `width:${corner}px`, `height:${corner}px`],
+    sw: [`left:0`, `bottom:0`, `width:${corner}px`, `height:${corner}px`]
+  };
+  return common.concat(styles[edge] || []).join(";");
+}
+
+function handleEmbeddedPopupMessage(event) {
+  if (event.source !== document.getElementById("boc-embedded-popup-host")?.querySelector("iframe")?.contentWindow) {
+    return;
+  }
+  const data = event.data || {};
+  if (data.source !== "boc-embedded-popup") {
+    return;
+  }
+  if (data.type === "drag-start") {
+    startEmbeddedPopupDrag(data);
+  } else if (data.type === "drag-move") {
+    moveEmbeddedPopup(data);
+  } else if (data.type === "drag-end") {
+    stopEmbeddedPopupInteraction();
+  }
+}
+
+function startEmbeddedPopupDrag(point) {
+  const host = document.getElementById("boc-embedded-popup-host");
+  if (!host) return;
+  const rect = host.getBoundingClientRect();
+  host.dataset.bocInteraction = JSON.stringify({
+    type: "drag",
+    startX: Number(point.clientX || 0),
+    startY: Number(point.clientY || 0),
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height
+  });
+}
+
+function moveEmbeddedPopup(point) {
+  const host = document.getElementById("boc-embedded-popup-host");
+  const interaction = parseEmbeddedPopupInteraction(host, "drag");
+  if (!host || !interaction) return;
+  host.style.left = `${interaction.left + Number(point.clientX || 0) - interaction.startX}px`;
+  host.style.top = `${interaction.top + Number(point.clientY || 0) - interaction.startY}px`;
+  clampEmbeddedPopupToViewport(host);
+}
+
+function startEmbeddedPopupResize(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const host = document.getElementById("boc-embedded-popup-host");
+  if (!host) return;
+  const rect = host.getBoundingClientRect();
+  host.dataset.bocInteraction = JSON.stringify({
+    type: "resize",
+    edge: event.currentTarget.dataset.bocResizeEdge || "se",
+    startX: event.clientX,
+    startY: event.clientY,
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height
+  });
+  window.addEventListener("pointermove", resizeEmbeddedPopup, true);
+  window.addEventListener("pointerup", stopEmbeddedPopupInteraction, true);
+}
+
+function resizeEmbeddedPopup(event) {
+  const host = document.getElementById("boc-embedded-popup-host");
+  const interaction = parseEmbeddedPopupInteraction(host, "resize");
+  if (!host || !interaction) return;
+  const dx = event.clientX - interaction.startX;
+  const dy = event.clientY - interaction.startY;
+  const minWidth = 420;
+  const minHeight = 360;
+  let left = interaction.left;
+  let top = interaction.top;
+  let width = interaction.width;
+  let height = interaction.height;
+
+  if (interaction.edge.includes("e")) width = interaction.width + dx;
+  if (interaction.edge.includes("s")) height = interaction.height + dy;
+  if (interaction.edge.includes("w")) {
+    width = interaction.width - dx;
+    left = interaction.left + dx;
+  }
+  if (interaction.edge.includes("n")) {
+    height = interaction.height - dy;
+    top = interaction.top + dy;
+  }
+  if (width < minWidth) {
+    if (interaction.edge.includes("w")) left -= minWidth - width;
+    width = minWidth;
+  }
+  if (height < minHeight) {
+    if (interaction.edge.includes("n")) top -= minHeight - height;
+    height = minHeight;
+  }
+
+  host.style.left = `${left}px`;
+  host.style.top = `${top}px`;
+  host.style.width = `${width}px`;
+  host.style.height = `${height}px`;
+  clampEmbeddedPopupToViewport(host);
+}
+
+function stopEmbeddedPopupInteraction() {
+  const host = document.getElementById("boc-embedded-popup-host");
+  if (host) {
+    delete host.dataset.bocInteraction;
+  }
+  window.removeEventListener("pointermove", resizeEmbeddedPopup, true);
+  window.removeEventListener("pointerup", stopEmbeddedPopupInteraction, true);
+}
+
+function parseEmbeddedPopupInteraction(host, type) {
+  try {
+    const interaction = JSON.parse(host?.dataset?.bocInteraction || "null");
+    return interaction?.type === type ? interaction : null;
+  } catch {
+    return null;
+  }
+}
+
+function clampEmbeddedPopupToViewport(host) {
+  const rect = host.getBoundingClientRect();
+  const margin = 8;
+  const maxWidth = Math.max(420, window.innerWidth - margin * 2);
+  const maxHeight = Math.max(360, window.innerHeight - margin * 2);
+  const width = Math.min(rect.width, maxWidth);
+  const height = Math.min(rect.height, maxHeight);
+  const left = Math.min(Math.max(rect.left, margin), window.innerWidth - width - margin);
+  const top = Math.min(Math.max(rect.top, margin), window.innerHeight - height - margin);
+  host.style.width = `${width}px`;
+  host.style.height = `${height}px`;
+  host.style.left = `${left}px`;
+  host.style.top = `${top}px`;
 }
 
 async function toggleInlinePanel() {
