@@ -841,18 +841,17 @@ function toggleEmbeddedPopup(tabId) {
 
   const host = document.createElement("div");
   host.id = "boc-embedded-popup-host";
+  host.dataset.bocScale = "1";
   host.style.cssText = [
     "position:fixed",
     "left:calc(100vw - 656px)",
     "top:72px",
     "width:640px",
     "height:560px",
-    "min-width:420px",
-    "min-height:360px",
     "z-index:2147483647",
+    "transform-origin:top left",
     "border-radius:14px",
     "box-shadow:0 24px 46px rgba(0,0,0,.24)",
-    "overflow:hidden",
     "background:#f1f1f1"
   ].join(";");
 
@@ -861,22 +860,22 @@ function toggleEmbeddedPopup(tabId) {
   const query = sourceTabId ? `?tabId=${encodeURIComponent(sourceTabId)}&embedded=1` : "?embedded=1";
   frame.src = chrome.runtime.getURL(`popup.html${query}`);
   frame.title = "Bilibili Obsidian Clipper";
-  frame.style.cssText = "width:100%;height:100%;border:0;display:block;background:#f1f1f1";
+  frame.style.cssText = "position:absolute;inset:0;width:640px;height:560px;border:0;display:block;background:#f1f1f1;border-radius:14px";
   host.appendChild(frame);
-  appendEmbeddedPopupResizeHandles(host);
+  appendEmbeddedPopupDragHandle(host);
+  appendEmbeddedPopupScaleHandles(host);
   document.documentElement.appendChild(host);
+  applyEmbeddedPopupScale(host, 1);
   clampEmbeddedPopupToViewport(host);
 
   window.setTimeout(() => {
     document.addEventListener("pointerdown", handleEmbeddedPopupOutsidePointerDown, true);
-    window.addEventListener("message", handleEmbeddedPopupMessage);
   }, 0);
 }
 
 function closeEmbeddedPopup() {
   stopEmbeddedPopupInteraction();
   document.removeEventListener("pointerdown", handleEmbeddedPopupOutsidePointerDown, true);
-  window.removeEventListener("message", handleEmbeddedPopupMessage);
   document.getElementById("boc-embedded-popup-host")?.remove();
 }
 
@@ -891,19 +890,36 @@ function handleEmbeddedPopupOutsidePointerDown(event) {
   }
 }
 
-function appendEmbeddedPopupResizeHandles(host) {
+function appendEmbeddedPopupDragHandle(host) {
+  const handle = document.createElement("div");
+  handle.title = "拖动窗口";
+  handle.style.cssText = [
+    "position:absolute",
+    "left:0",
+    "right:84px",
+    "top:0",
+    "height:42px",
+    "z-index:3",
+    "cursor:move",
+    "background:transparent"
+  ].join(";");
+  handle.addEventListener("pointerdown", startEmbeddedPopupDrag);
+  host.appendChild(handle);
+}
+
+function appendEmbeddedPopupScaleHandles(host) {
   ["n", "e", "s", "w", "ne", "nw", "se", "sw"].forEach((edge) => {
     const handle = document.createElement("div");
-    handle.dataset.bocResizeEdge = edge;
-    handle.style.cssText = getEmbeddedPopupResizeHandleStyle(edge);
-    handle.addEventListener("pointerdown", startEmbeddedPopupResize);
+    handle.dataset.bocScaleEdge = edge;
+    handle.style.cssText = getEmbeddedPopupScaleHandleStyle(edge);
+    handle.addEventListener("pointerdown", startEmbeddedPopupScale);
     host.appendChild(handle);
   });
 }
 
-function getEmbeddedPopupResizeHandleStyle(edge) {
+function getEmbeddedPopupScaleHandleStyle(edge) {
   const cursor = `${edge}-resize`;
-  const common = ["position:absolute", "z-index:2", `cursor:${cursor}`, "background:transparent"];
+  const common = ["position:absolute", "z-index:4", `cursor:${cursor}`, "background:transparent"];
   const size = 12;
   const corner = 18;
   const styles = {
@@ -919,104 +935,95 @@ function getEmbeddedPopupResizeHandleStyle(edge) {
   return common.concat(styles[edge] || []).join(";");
 }
 
-function handleEmbeddedPopupMessage(event) {
-  if (event.source !== document.getElementById("boc-embedded-popup-host")?.querySelector("iframe")?.contentWindow) {
-    return;
-  }
-  const data = event.data || {};
-  if (data.source !== "boc-embedded-popup") {
-    return;
-  }
-  if (data.type === "drag-start") {
-    startEmbeddedPopupDrag(data);
-  } else if (data.type === "drag-move") {
-    moveEmbeddedPopup(data);
-  } else if (data.type === "drag-end") {
-    stopEmbeddedPopupInteraction();
-  }
-}
-
-function startEmbeddedPopupDrag(point) {
-  const host = document.getElementById("boc-embedded-popup-host");
-  if (!host) return;
-  const rect = host.getBoundingClientRect();
-  host.dataset.bocInteraction = JSON.stringify({
-    type: "drag",
-    startX: Number(point.clientX || 0),
-    startY: Number(point.clientY || 0),
-    left: rect.left,
-    top: rect.top,
-    width: rect.width,
-    height: rect.height
-  });
-}
-
-function moveEmbeddedPopup(point) {
-  const host = document.getElementById("boc-embedded-popup-host");
-  const interaction = parseEmbeddedPopupInteraction(host, "drag");
-  if (!host || !interaction) return;
-  host.style.left = `${interaction.left + Number(point.clientX || 0) - interaction.startX}px`;
-  host.style.top = `${interaction.top + Number(point.clientY || 0) - interaction.startY}px`;
-  clampEmbeddedPopupToViewport(host);
-}
-
-function startEmbeddedPopupResize(event) {
+function startEmbeddedPopupDrag(event) {
   event.preventDefault();
   event.stopPropagation();
   const host = document.getElementById("boc-embedded-popup-host");
   if (!host) return;
   const rect = host.getBoundingClientRect();
   host.dataset.bocInteraction = JSON.stringify({
-    type: "resize",
-    edge: event.currentTarget.dataset.bocResizeEdge || "se",
+    type: "drag",
+    startX: event.clientX,
+    startY: event.clientY,
+    left: rect.left,
+    top: rect.top
+  });
+  window.addEventListener("pointermove", moveEmbeddedPopup, true);
+  window.addEventListener("pointerup", stopEmbeddedPopupInteraction, true);
+}
+
+function moveEmbeddedPopup(event) {
+  const host = document.getElementById("boc-embedded-popup-host");
+  const interaction = parseEmbeddedPopupInteraction(host, "drag");
+  if (!host || !interaction) return;
+  host.style.left = `${interaction.left + event.clientX - interaction.startX}px`;
+  host.style.top = `${interaction.top + event.clientY - interaction.startY}px`;
+  clampEmbeddedPopupToViewport(host);
+}
+
+function startEmbeddedPopupScale(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const host = document.getElementById("boc-embedded-popup-host");
+  if (!host) return;
+  const rect = host.getBoundingClientRect();
+  const scale = getEmbeddedPopupScale(host);
+  host.dataset.bocInteraction = JSON.stringify({
+    type: "scale",
+    edge: event.currentTarget.dataset.bocScaleEdge || "se",
     startX: event.clientX,
     startY: event.clientY,
     left: rect.left,
     top: rect.top,
     width: rect.width,
-    height: rect.height
+    height: rect.height,
+    scale
   });
-  window.addEventListener("pointermove", resizeEmbeddedPopup, true);
+  window.addEventListener("pointermove", scaleEmbeddedPopup, true);
   window.addEventListener("pointerup", stopEmbeddedPopupInteraction, true);
 }
 
-function resizeEmbeddedPopup(event) {
+function scaleEmbeddedPopup(event) {
   const host = document.getElementById("boc-embedded-popup-host");
-  const interaction = parseEmbeddedPopupInteraction(host, "resize");
+  const interaction = parseEmbeddedPopupInteraction(host, "scale");
   if (!host || !interaction) return;
+
   const dx = event.clientX - interaction.startX;
   const dy = event.clientY - interaction.startY;
-  const minWidth = 420;
-  const minHeight = 360;
+  const edge = interaction.edge;
+  const widthDelta = edge.includes("w") ? -dx : edge.includes("e") ? dx : 0;
+  const heightDelta = edge.includes("n") ? -dy : edge.includes("s") ? dy : 0;
+  const scaleFromWidth = (interaction.width + widthDelta) / 640;
+  const scaleFromHeight = (interaction.height + heightDelta) / 560;
+  let nextScale = Math.max(scaleFromWidth || 0, scaleFromHeight || 0);
+  if (!Number.isFinite(nextScale) || nextScale <= 0) {
+    nextScale = interaction.scale;
+  }
+  nextScale = Math.min(Math.max(nextScale, 0.65), 1.8);
+
   let left = interaction.left;
   let top = interaction.top;
-  let width = interaction.width;
-  let height = interaction.height;
-
-  if (interaction.edge.includes("e")) width = interaction.width + dx;
-  if (interaction.edge.includes("s")) height = interaction.height + dy;
-  if (interaction.edge.includes("w")) {
-    width = interaction.width - dx;
-    left = interaction.left + dx;
+  if (edge.includes("w")) {
+    left = interaction.left + interaction.width - 640 * nextScale;
   }
-  if (interaction.edge.includes("n")) {
-    height = interaction.height - dy;
-    top = interaction.top + dy;
-  }
-  if (width < minWidth) {
-    if (interaction.edge.includes("w")) left -= minWidth - width;
-    width = minWidth;
-  }
-  if (height < minHeight) {
-    if (interaction.edge.includes("n")) top -= minHeight - height;
-    height = minHeight;
+  if (edge.includes("n")) {
+    top = interaction.top + interaction.height - 560 * nextScale;
   }
 
   host.style.left = `${left}px`;
   host.style.top = `${top}px`;
-  host.style.width = `${width}px`;
-  host.style.height = `${height}px`;
+  applyEmbeddedPopupScale(host, nextScale);
   clampEmbeddedPopupToViewport(host);
+}
+
+function applyEmbeddedPopupScale(host, scale) {
+  host.dataset.bocScale = String(scale);
+  host.style.transform = `scale(${scale})`;
+}
+
+function getEmbeddedPopupScale(host) {
+  const scale = Number(host?.dataset?.bocScale || 1);
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
 }
 
 function stopEmbeddedPopupInteraction() {
@@ -1024,7 +1031,8 @@ function stopEmbeddedPopupInteraction() {
   if (host) {
     delete host.dataset.bocInteraction;
   }
-  window.removeEventListener("pointermove", resizeEmbeddedPopup, true);
+  window.removeEventListener("pointermove", moveEmbeddedPopup, true);
+  window.removeEventListener("pointermove", scaleEmbeddedPopup, true);
   window.removeEventListener("pointerup", stopEmbeddedPopupInteraction, true);
 }
 
@@ -1038,16 +1046,13 @@ function parseEmbeddedPopupInteraction(host, type) {
 }
 
 function clampEmbeddedPopupToViewport(host) {
+  const scale = getEmbeddedPopupScale(host);
+  const width = 640 * scale;
+  const height = 560 * scale;
   const rect = host.getBoundingClientRect();
   const margin = 8;
-  const maxWidth = Math.max(420, window.innerWidth - margin * 2);
-  const maxHeight = Math.max(360, window.innerHeight - margin * 2);
-  const width = Math.min(rect.width, maxWidth);
-  const height = Math.min(rect.height, maxHeight);
-  const left = Math.min(Math.max(rect.left, margin), window.innerWidth - width - margin);
-  const top = Math.min(Math.max(rect.top, margin), window.innerHeight - height - margin);
-  host.style.width = `${width}px`;
-  host.style.height = `${height}px`;
+  const left = Math.min(Math.max(rect.left, margin), Math.max(margin, window.innerWidth - width - margin));
+  const top = Math.min(Math.max(rect.top, margin), Math.max(margin, window.innerHeight - height - margin));
   host.style.left = `${left}px`;
   host.style.top = `${top}px`;
 }
