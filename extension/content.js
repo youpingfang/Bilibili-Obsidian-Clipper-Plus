@@ -949,7 +949,7 @@ function startEmbeddedPopupDrag(event) {
     top: rect.top
   });
   window.addEventListener("pointermove", moveEmbeddedPopup, true);
-  window.addEventListener("pointerup", stopEmbeddedPopupInteraction, true);
+  bindEmbeddedPopupInteractionEndEvents();
 }
 
 function moveEmbeddedPopup(event) {
@@ -964,6 +964,7 @@ function moveEmbeddedPopup(event) {
 function startEmbeddedPopupScale(event) {
   event.preventDefault();
   event.stopPropagation();
+  event.currentTarget.setPointerCapture?.(event.pointerId);
   const host = document.getElementById("boc-embedded-popup-host");
   if (!host) return;
   const rect = host.getBoundingClientRect();
@@ -977,10 +978,11 @@ function startEmbeddedPopupScale(event) {
     top: rect.top,
     width: rect.width,
     height: rect.height,
-    scale
+    scale,
+    pointerId: event.pointerId
   });
   window.addEventListener("pointermove", scaleEmbeddedPopup, true);
-  window.addEventListener("pointerup", stopEmbeddedPopupInteraction, true);
+  bindEmbeddedPopupInteractionEndEvents();
 }
 
 function scaleEmbeddedPopup(event) {
@@ -1026,14 +1028,30 @@ function getEmbeddedPopupScale(host) {
   return Number.isFinite(scale) && scale > 0 ? scale : 1;
 }
 
+function bindEmbeddedPopupInteractionEndEvents() {
+  window.addEventListener("pointerup", stopEmbeddedPopupInteraction, true);
+  window.addEventListener("pointercancel", stopEmbeddedPopupInteraction, true);
+  window.addEventListener("blur", stopEmbeddedPopupInteraction, true);
+  document.addEventListener("visibilitychange", stopEmbeddedPopupInteraction, true);
+}
+
 function stopEmbeddedPopupInteraction() {
   const host = document.getElementById("boc-embedded-popup-host");
   if (host) {
+    const pointerId = parseEmbeddedPopupInteraction(host, "scale")?.pointerId;
+    if (pointerId != null) {
+      host.querySelectorAll("[data-boc-scale-edge]").forEach((handle) => {
+        handle.releasePointerCapture?.(pointerId);
+      });
+    }
     delete host.dataset.bocInteraction;
   }
   window.removeEventListener("pointermove", moveEmbeddedPopup, true);
   window.removeEventListener("pointermove", scaleEmbeddedPopup, true);
   window.removeEventListener("pointerup", stopEmbeddedPopupInteraction, true);
+  window.removeEventListener("pointercancel", stopEmbeddedPopupInteraction, true);
+  window.removeEventListener("blur", stopEmbeddedPopupInteraction, true);
+  document.removeEventListener("visibilitychange", stopEmbeddedPopupInteraction, true);
 }
 
 function parseEmbeddedPopupInteraction(host, type) {
