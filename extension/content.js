@@ -396,6 +396,15 @@ function bindRuntimeEvents() {
       return false;
     }
 
+    if (message.type === "toggle-inline-panel") {
+      toggleInlinePanel()
+        .then(() => sendResponse({ ok: true, payload: getPopupPayload() }))
+        .catch((error) =>
+          sendResponse({ ok: false, error: getErrorMessage(error), payload: getPopupPayload() })
+        );
+      return true;
+    }
+
     if (message.type === "popup-get-state") {
       sendResponse({ ok: true, payload: getPopupPayload() });
       return false;
@@ -621,7 +630,7 @@ function bindUiEvents() {
   const chapterList = byId(ids.readingChapterList);
   const transcriptList = byId(ids.readingTranscriptList);
 
-  closeBtn.addEventListener("click", () => panel.classList.remove("open"));
+  closeBtn.addEventListener("click", closeInlinePanel);
   refreshBtn.addEventListener("click", refreshClip);
   select.addEventListener("change", onSubtitleChange);
   copyBtn.addEventListener("click", copyMarkdown);
@@ -809,6 +818,27 @@ function resetClipState() {
     renderReadingView();
     renderReadingStatus("请先点击“刷新抓取”加载当前视频字幕。");
   }
+}
+
+async function toggleInlinePanel() {
+  ensureUiReady();
+  const panel = byId(ids.panel);
+  if (panel.classList.contains("open")) {
+    closeInlinePanel();
+    return;
+  }
+
+  panel.classList.add("open");
+  panel.setAttribute("aria-hidden", "false");
+  if (!state.markdown && state.subtitleFetchState !== "loading") {
+    await refreshClip();
+  }
+}
+
+function closeInlinePanel() {
+  const panel = byId(ids.panel);
+  panel.classList.remove("open");
+  panel.setAttribute("aria-hidden", "true");
 }
 
 async function refreshClip() {
@@ -1388,6 +1418,7 @@ async function sendToObsidian(options = {}) {
     const content = saveSource === "ai" ? buildAiSummaryMarkdown(state, aiSummary, state.settings) : state.markdown;
     await writeNoteByLocalApi(baseUrl, apiKey, filepath, content);
     setMessage(`已写入 Obsidian：${filepath}`);
+    closeInlinePanel();
   } catch (error) {
     if (isExtensionContextInvalidated(error)) {
       setMessage("扩展刚刚更新，请刷新当前页面后重试。");

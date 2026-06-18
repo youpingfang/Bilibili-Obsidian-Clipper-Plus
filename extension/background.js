@@ -142,6 +142,20 @@ async function sendMessageToTab(tabId, message) {
   });
 }
 
+function isSupportedSubtitlePage(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    if (parsed.hostname !== "www.bilibili.com") {
+      return false;
+    }
+    return parsed.pathname === "/list/watchlater" ||
+      parsed.pathname === "/list/watchlater/" ||
+      parsed.pathname.startsWith("/video/");
+  } catch {
+    return false;
+  }
+}
+
 async function triggerReaderModeInTab(tabId, readerUrl = "", retries = 12, delayMs = 300) {
   for (let attempt = 0; attempt < retries; attempt += 1) {
     if (attempt > 0) {
@@ -171,6 +185,20 @@ async function triggerReaderModeInTab(tabId, readerUrl = "", retries = 12, delay
 
   return false;
 }
+
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    if (!tab?.id || !isSupportedSubtitlePage(tab.url || "")) {
+      await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html") });
+      return;
+    }
+
+    await ensureReaderContentReady(tab.id);
+    await sendMessageToTab(tab.id, { type: "toggle-inline-panel" });
+  } catch (error) {
+    console.warn("[BOC] failed to toggle inline panel", error);
+  }
+});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message !== "object") {
