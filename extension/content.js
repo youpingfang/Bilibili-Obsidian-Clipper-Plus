@@ -835,7 +835,7 @@ function resetClipState() {
 function toggleEmbeddedPopup(tabId) {
   const existing = document.getElementById("boc-embedded-popup-host");
   if (existing) {
-    existing.remove();
+    closeEmbeddedPopup();
     return;
   }
 
@@ -864,10 +864,26 @@ function toggleEmbeddedPopup(tabId) {
   frame.style.cssText = "width:100%;height:100%;border:0;display:block;background:#f1f1f1";
   host.appendChild(frame);
   document.documentElement.appendChild(host);
+
+  window.setTimeout(() => {
+    document.addEventListener("pointerdown", handleEmbeddedPopupOutsidePointerDown, true);
+  }, 0);
 }
 
 function closeEmbeddedPopup() {
+  document.removeEventListener("pointerdown", handleEmbeddedPopupOutsidePointerDown, true);
   document.getElementById("boc-embedded-popup-host")?.remove();
+}
+
+function handleEmbeddedPopupOutsidePointerDown(event) {
+  const host = document.getElementById("boc-embedded-popup-host");
+  if (!host) {
+    closeEmbeddedPopup();
+    return;
+  }
+  if (!host.contains(event.target)) {
+    closeEmbeddedPopup();
+  }
 }
 
 async function toggleInlinePanel() {
