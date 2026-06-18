@@ -75,6 +75,37 @@
         启用调试日志（仅在排查问题时开启）
       </label>
 
+      <section class="field-group ai-settings">
+        <h2>AI 总结</h2>
+        <p class="hint">支持 DeepSeek、OpenAI 兼容接口。API Key 仅保存在本机浏览器。</p>
+
+        <label class="checkbox">
+          <input id="aiEnabled" type="checkbox" />
+          启用 AI 总结
+        </label>
+
+        <label for="aiBaseUrl">AI API 地址</label>
+        <input id="aiBaseUrl" type="text" placeholder="例如：https://api.deepseek.com" />
+
+        <label for="aiApiKey">AI API Key</label>
+        <input id="aiApiKey" type="password" placeholder="填入 DeepSeek / OpenAI 兼容 API Key" />
+
+        <div class="model-row">
+          <div>
+            <label for="aiModel">模型</label>
+            <select id="aiModel"></select>
+          </div>
+          <button id="fetchAiModelsBtn" class="secondary-btn" type="button">获取模型</button>
+        </div>
+
+        <div class="prompt-editor-head">
+          <h3>常用提示词</h3>
+          <button id="addAiPromptBtn" class="add-property-btn" type="button">+ 添加提示词</button>
+        </div>
+        <div id="aiPromptsList" class="ai-prompts-list"></div>
+        <p id="aiPromptsEmpty" class="fixed-properties-empty">还没有提示词</p>
+      </section>
+
       <section class="field-group">
         <h2>笔记属性（Frontmatter）</h2>
         <p class="hint">勾选需要写入到 Obsidian 属性区的字段。</p>

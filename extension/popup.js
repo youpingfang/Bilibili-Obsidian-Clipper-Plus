@@ -7,6 +7,9 @@ const el = {
   propTags: document.getElementById("propTags"),
   subtitleSelect: document.getElementById("subtitleSelect"),
   preview: document.getElementById("preview"),
+  aiSummary: document.getElementById("aiSummary"),
+  aiPromptSelect: document.getElementById("aiPromptSelect"),
+  summarizeBtn: document.getElementById("summarizeBtn"),
   refreshBtn: document.getElementById("refreshBtn"),
   copyBtn: document.getElementById("copyBtn"),
   downloadBtn: document.getElementById("downloadBtn"),
@@ -16,9 +19,15 @@ const el = {
 };
 
 let latestPayload = null;
+let latestSettings = null;
+let selectedSaveSource = "subtitle";
 const EXPECTED_CONTENT_SCRIPT_VERSION = chrome.runtime.getManifest().version || "";
 const DEFAULT_SETTINGS = {
-  downloadFormat: "srt"
+  downloadFormat: "srt",
+  aiEnabled: false,
+  aiModel: "",
+  aiPrompts: [],
+  aiSelectedPromptId: ""
 };
 
 function formatLocalDate(value = Date.now()) {
@@ -32,6 +41,9 @@ init().catch((error) => {
 
 async function init() {
   bindEvents();
+  latestSettings = await getSettingsFromRuntime();
+  renderAiPromptOptions(latestSettings);
+  setSelectedSaveSource("subtitle");
   await refreshFromTab();
 }
 
@@ -42,13 +54,14 @@ function bindEvents() {
 
   el.copyBtn.addEventListener("click", async () => {
     const payload = await ensurePayload();
-    if (!payload?.markdown) {
+    const current = getCurrentOutput(payload);
+    if (!current.copyText) {
       setMessage("没有可复制内容，请先刷新。");
       return;
     }
     try {
-      await navigator.clipboard.writeText(payload.markdown);
-      setMessage("已复制完整 Markdown。");
+      await navigator.clipboard.writeText(current.copyText);
+      setMessage(`已复制${current.label}。`);
     } catch (error) {
       setMessage(`复制失败：${error?.message || "无法访问剪贴板"}`);
     }
@@ -57,6 +70,16 @@ function bindEvents() {
   el.downloadBtn.addEventListener("click", async () => {
     const payload = await ensurePayload();
     const settings = await getSettingsFromRuntime();
+    const current = getCurrentOutput(payload, settings);
+    if (current.source === "ai") {
+      if (!current.downloadText) {
+        setMessage("没有可下载的 AI 总结。");
+        return;
+      }
+      downloadTextFile(current.downloadText, `${sanitizeFileName(payload?.title || "bilibili-ai-summary")}.ai-summary.md`);
+      setMessage("已下载 AI 总结。");
+      return;
+    }
     const format = normalizeDownloadFormat(settings?.downloadFormat || payload?.downloadFormat);
     const content =
       format === "txt" ? payload?.txt || payload?.subtitlePreview || "" : payload?.srt || "";
@@ -65,28 +88,46 @@ function bindEvents() {
       return;
     }
     const safeTitle = sanitizeFileName(payload.title || "bilibili-subtitle");
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${safeTitle}.${format}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    downloadTextFile(content, `${safeTitle}.${format}`);
     setMessage(`已下载 ${format.toUpperCase()}。`);
   });
 
   el.sendBtn.addEventListener("click", async () => {
     setStatus("正在发送到 Obsidian...");
-    const resp = await sendToContent({ type: "popup-send-obsidian" });
+    const saveSource = selectedSaveSource === "ai" && el.aiSummary.value.trim() ? "ai" : "subtitle";
+    const resp = await sendToContent({
+      type: "popup-send-obsidian",
+      saveSource,
+      aiSummary: saveSource === "ai" ? el.aiSummary.value.trim() : ""
+    });
     if (!resp?.ok) {
       setMessage(`发送失败：${resp?.error || "未知错误"}`);
     }
     render(resp?.payload || latestPayload);
   });
 
+  el.summarizeBtn.addEventListener("click", summarizeCurrentSubtitle);
+
+  [el.preview, el.aiSummary].forEach((node) => {
+    node.addEventListener("focus", () => setSelectedSaveSource(node === el.aiSummary ? "ai" : "subtitle"));
+    node.addEventListener("pointerdown", () => setSelectedSaveSource(node === el.aiSummary ? "ai" : "subtitle"));
+  });
+  document.querySelectorAll(".preview-pane").forEach((pane) => {
+    pane.addEventListener("mouseenter", () => setSelectedSaveSource(pane.dataset.source));
+  });
+
   el.readingViewBtn?.addEventListener("click", async () => {
+    const payload = await ensurePayload();
+    const current = getCurrentOutput(payload);
+    if (current.source === "ai") {
+      if (!current.readText) {
+        setMessage("没有可阅读的 AI 总结。");
+        return;
+      }
+      await openAiReadingView(payload, current.readText);
+      return;
+    }
+
     const tab = await getActiveTab();
     if (!isSupportedSubtitlePage(tab?.url || "")) {
       setMessage("请先打开一个 B 站视频页。");
@@ -130,6 +171,8 @@ function bindEvents() {
     if (!resp?.ok) {
       setMessage(`切换失败：${resp?.error || "未知错误"}`);
     }
+    el.aiSummary.value = "";
+    setSelectedSaveSource("subtitle");
     render(resp?.payload || latestPayload);
   });
 
@@ -138,8 +181,73 @@ function bindEvents() {
   });
 }
 
+function getCurrentOutput(payload, settings = latestSettings) {
+  const aiText = String(el.aiSummary.value || "").trim();
+  if (selectedSaveSource === "ai" && aiText) {
+    return {
+      source: "ai",
+      label: "AI 总结",
+      copyText: aiText,
+      downloadText: buildAiSummaryDocument(payload, aiText),
+      readText: aiText
+    };
+  }
+  const format = normalizeDownloadFormat(settings?.downloadFormat || payload?.downloadFormat);
+  return {
+    source: "subtitle",
+    label: "字幕 Markdown",
+    copyText: payload?.markdown || "",
+    downloadText: format === "txt" ? payload?.txt || payload?.subtitlePreview || "" : payload?.srt || "",
+    readText: payload?.subtitlePreview || ""
+  };
+}
+
+function downloadTextFile(content, filename) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function buildAiSummaryDocument(payload, summary) {
+  const title = String(payload?.title || "Bilibili AI 总结").trim();
+  const url = String(payload?.url || "").trim();
+  return [`# ${title}`, url ? `\n${url}` : "", "\n## AI 总结\n", summary].join("\n").trim();
+}
+
+async function openAiReadingView(payload, summary) {
+  const title = String(payload?.title || "AI 总结").trim();
+  const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body{margin:0;background:#f6f7f9;color:#202124;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;line-height:1.75}
+    main{max-width:860px;margin:0 auto;padding:32px 22px 56px}
+    h1{font-size:24px;line-height:1.35;margin:0 0 16px}
+    pre{white-space:pre-wrap;word-break:break-word;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px;font:inherit}
+  </style>
+</head>
+<body><main><h1>${escapeHtml(title)}</h1><pre>${escapeHtml(summary)}</pre></main></body>
+</html>`;
+  const url = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+  await chrome.tabs.create({ url });
+  window.setTimeout(() => window.close(), 80);
+}
+
 async function refreshFromTab() {
   setStatus("正在抓取...");
+  latestSettings = await getSettingsFromRuntime();
+  renderAiPromptOptions(latestSettings);
+  el.aiSummary.value = "";
+  setSelectedSaveSource("subtitle");
   const resp = await sendToContent({ type: "popup-refresh" });
   if (!resp?.ok) {
     const errorText = resp?.error || "请在 B 站视频页使用。";
@@ -195,6 +303,88 @@ function render(payload) {
   }
 
   el.preview.value = payload.subtitlePreview || "";
+  updateAiControls();
+}
+
+async function summarizeCurrentSubtitle() {
+  const payload = await ensurePayload();
+  latestSettings = await getSettingsFromRuntime();
+  renderAiPromptOptions(latestSettings);
+
+  if (!latestSettings?.aiEnabled) {
+    setMessage("请先在设置中启用 AI 总结。");
+    return;
+  }
+  const text = payload?.txt || payload?.subtitlePreview || "";
+  if (!text.trim()) {
+    setMessage("没有可总结字幕，请先刷新。");
+    return;
+  }
+
+  setAiBusy(true);
+  setStatus("AI 正在分析字幕...");
+  setMessage("");
+  try {
+    const resp = await sendToRuntime({
+      type: "summarize-text",
+      text,
+      title: payload?.title || "",
+      promptId: el.aiPromptSelect.value || latestSettings.aiSelectedPromptId || "",
+      model: latestSettings.aiModel || ""
+    });
+    if (!resp?.ok) {
+      setMessage(`AI 总结失败：${resp?.error || "未知错误"}`);
+      setStatus("AI 总结失败。");
+      return;
+    }
+    el.aiSummary.value = resp.summary || "";
+    setSelectedSaveSource("ai");
+    setStatus("AI 总结完成。");
+    setMessage("当前保存来源：AI 总结。");
+  } catch (error) {
+    setMessage(`AI 总结失败：${error.message || "未知错误"}`);
+    setStatus("AI 总结失败。");
+  } finally {
+    setAiBusy(false);
+  }
+}
+
+function renderAiPromptOptions(settings) {
+  const prompts = Array.isArray(settings?.aiPrompts) ? settings.aiPrompts : [];
+  if (!settings?.aiEnabled || prompts.length === 0) {
+    el.aiPromptSelect.innerHTML = '<option value="">未启用 AI</option>';
+    el.aiPromptSelect.disabled = true;
+    updateAiControls();
+    return;
+  }
+  const selectedId = settings.aiSelectedPromptId || prompts[0]?.id || "";
+  el.aiPromptSelect.innerHTML = prompts
+    .map((prompt) => {
+      const selected = prompt.id === selectedId ? "selected" : "";
+      return `<option value="${escapeHtml(prompt.id)}" ${selected}>${escapeHtml(prompt.name || "提示词")}</option>`;
+    })
+    .join("");
+  el.aiPromptSelect.disabled = false;
+  updateAiControls();
+}
+
+function updateAiControls() {
+  const enabled = Boolean(latestSettings?.aiEnabled);
+  el.summarizeBtn.disabled = !enabled;
+  el.aiPromptSelect.disabled = !enabled || el.aiPromptSelect.options.length === 0;
+}
+
+function setAiBusy(isBusy) {
+  el.summarizeBtn.disabled = isBusy || !latestSettings?.aiEnabled;
+  el.aiPromptSelect.disabled = isBusy || !latestSettings?.aiEnabled;
+  el.summarizeBtn.textContent = isBusy ? "分析中" : "总结";
+}
+
+function setSelectedSaveSource(source) {
+  selectedSaveSource = source === "ai" ? "ai" : "subtitle";
+  document.querySelectorAll(".preview-pane").forEach((pane) => {
+    pane.dataset.selected = pane.dataset.source === selectedSaveSource ? "true" : "false";
+  });
 }
 
 function setText(node, text) {

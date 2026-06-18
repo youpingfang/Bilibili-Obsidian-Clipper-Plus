@@ -431,7 +431,10 @@ function bindRuntimeEvents() {
     }
 
     if (message.type === "popup-send-obsidian") {
-      sendToObsidian()
+      sendToObsidian({
+        saveSource: message.saveSource,
+        aiSummary: message.aiSummary
+      })
         .then(() => sendResponse({ ok: true, payload: getPopupPayload() }))
         .catch((error) =>
           sendResponse({ ok: false, error: getErrorMessage(error), payload: getPopupPayload() })
@@ -1357,10 +1360,16 @@ async function downloadSubtitle() {
   setMessage(`已下载：${filename}`);
 }
 
-async function sendToObsidian() {
+async function sendToObsidian(options = {}) {
   state.settings = await getSettings();
-  if (!state.markdown) {
+  const saveSource = options?.saveSource === "ai" ? "ai" : "subtitle";
+  const aiSummary = String(options?.aiSummary || "").trim();
+  if (!state.markdown && saveSource !== "ai") {
     setMessage("没有可发送内容，请先刷新抓取。");
+    return;
+  }
+  if (saveSource === "ai" && !aiSummary) {
+    setMessage("没有可发送的 AI 总结内容。");
     return;
   }
 
@@ -1376,7 +1385,8 @@ async function sendToObsidian() {
   }
 
   try {
-    await writeNoteByLocalApi(baseUrl, apiKey, filepath, state.markdown);
+    const content = saveSource === "ai" ? buildAiSummaryMarkdown(state, aiSummary, state.settings) : state.markdown;
+    await writeNoteByLocalApi(baseUrl, apiKey, filepath, content);
     setMessage(`已写入 Obsidian：${filepath}`);
   } catch (error) {
     if (isExtensionContextInvalidated(error)) {
@@ -4618,6 +4628,40 @@ function buildMarkdown(meta, body, settings) {
 
   lines.push("## 字幕", "", ...subtitleSectionLines);
 
+  return lines.join("\n");
+}
+
+function buildAiSummaryMarkdown(meta, summary, settings) {
+  const created = formatLocalDate();
+  const tags = (settings.tags || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const tagsYaml =
+    tags.length === 0 ? "[]" : `[${tags.map((tag) => `"${tag.replace(/"/g, '\\"')}"`).join(", ")}]`;
+  const compactWithHours = shouldShowHoursInNote(meta, meta.subtitleBody || []);
+  const chapterLines = buildChapterLines(meta.chapters || [], compactWithHours);
+  const frontMatter = buildFrontMatter(meta, settings, created, tagsYaml);
+  const page = extractPageIndex(location.href);
+  const embedIframe = buildBilibiliEmbedIframe(meta, page);
+  const intro = String(meta.description || "").trim();
+  const summaryText = String(summary || "").trim();
+
+  const lines = [];
+  if (frontMatter) {
+    lines.push(frontMatter, "");
+  }
+  lines.push(embedIframe, "");
+
+  if (intro) {
+    lines.push("## 简介", "", intro, "");
+  }
+
+  if (chapterLines.length > 0) {
+    lines.push("## 章节", "", ...chapterLines, "");
+  }
+
+  lines.push("## AI 总结", "", summaryText || "（暂无 AI 总结）");
   return lines.join("\n");
 }
 

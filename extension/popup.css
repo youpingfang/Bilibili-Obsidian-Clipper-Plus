@@ -2,8 +2,8 @@ html,
 body {
   margin: 0;
   padding: 0;
-  width: 360px;
-  height: 540px;
+  width: 640px;
+  height: 560px;
   background: #f1f1f1;
   color: #2f2f2f;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue",
@@ -110,9 +110,88 @@ body {
   font-size: 13px;
 }
 
-#preview {
+.split-preview {
+  flex: 1;
+  min-height: 0;
+  --preview-toolbar-height: 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.preview-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.preview-pane > .label,
+.ai-head {
+  height: var(--preview-toolbar-height);
+  margin-bottom: 0;
+}
+
+.preview-pane > .label {
+  display: flex;
+  align-items: center;
+}
+
+.preview-pane[data-selected="true"] {
+  border-color: #00a1d6;
+}
+
+.ai-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ai-head .label {
+  flex: 0 0 auto;
+}
+
+.mini-btn {
+  height: 24px;
+  border: 1px solid #cfcfcf;
+  border-radius: 7px;
+  background: #f8f8f8;
+  color: #3d3d3d;
+  font-size: 12px;
+  padding: 0 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.summarize-btn {
+  border-color: #8b5cf6;
+  background: #8b5cf6;
+  color: #fff;
+  font-weight: 800;
+}
+
+.ai-prompt-select {
+  flex: 1 1 auto;
+  min-width: 84px;
+  height: 28px;
+  border: 1px solid #cfcfcf;
+  border-radius: 8px;
+  padding: 0 8px;
+  background: #fff;
+  color: #2d2d2d;
+  font-size: 12px;
+}
+
+#preview,
+#aiSummary {
   width: 100%;
   flex: 1;
+  height: calc(100% - var(--preview-toolbar-height) - 5px);
   min-height: 0;
   box-sizing: border-box;
   border: 1px solid #d0d0d0;
@@ -126,6 +205,10 @@ body {
   overflow: auto;
   white-space: pre;
   font-family: "SF Mono", "JetBrains Mono", "PingFang SC", Menlo, Monaco, Consolas, monospace;
+}
+
+#aiSummary {
+  white-space: pre-wrap;
 }
 
 .actions {

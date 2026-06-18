@@ -6,6 +6,18 @@ const DEFAULT_SYNC_SETTINGS = {
   includeDateInFilename: true,
   includeTimestampInBody: true,
   enableDebugLogs: false,
+  aiEnabled: false,
+  aiBaseUrl: "https://api.deepseek.com",
+  aiModel: "",
+  aiPrompts: [
+    {
+      id: "default-summary",
+      name: "通用总结",
+      content:
+        "请基于下面的哔哩哔哩（Bilibili）视频字幕进行结构化总结，不要按 YouTube 视频语境处理。保留关键观点、步骤、结论和可执行建议。输出 Markdown，语言与字幕保持一致。"
+    }
+  ],
+  aiSelectedPromptId: "default-summary",
   readerTheme: "light",
   readerFontScale: "m",
   readerLetterSpacing: "normal",
@@ -28,8 +40,11 @@ const DEFAULT_SYNC_SETTINGS = {
 };
 
 const DEFAULT_LOCAL_SETTINGS = {
-  obsidianApiKey: ""
+  obsidianApiKey: "",
+  aiApiKey: ""
 };
+const LEGACY_DEFAULT_AI_PROMPT =
+  "请基于下面的视频字幕进行结构化总结，保留关键观点、步骤、结论和可执行建议。输出 Markdown，语言与字幕保持一致。";
 const EXPECTED_CONTENT_SCRIPT_VERSION = chrome.runtime.getManifest().version || "";
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -180,6 +195,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     chrome.tabs
       .create({ url: chrome.runtime.getURL("options.html") })
       .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === "fetch-ai-models") {
+    fetchAiModels(message)
+      .then((models) => sendResponse({ ok: true, models }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === "summarize-text") {
+    summarizeText(message)
+      .then((summary) => sendResponse({ ok: true, summary }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
@@ -368,7 +397,8 @@ async function initializeSettingsStorage() {
 
   await chrome.storage.sync.set({ ...DEFAULT_SYNC_SETTINGS, ...syncCurrent });
   await chrome.storage.local.set({
-    obsidianApiKey: normalizeApiKey(localCurrent.obsidianApiKey)
+    obsidianApiKey: normalizeApiKey(localCurrent.obsidianApiKey),
+    aiApiKey: normalizeApiKey(localCurrent.aiApiKey)
   });
 
   const legacySyncApiKey = normalizeApiKey(syncCurrent.obsidianApiKey);
@@ -398,6 +428,11 @@ async function getMergedSettings() {
   merged.readerChapterVisibility = normalizeReaderChapterVisibility(merged.readerChapterVisibility);
   merged.readerTranscriptVisible = normalizeReaderTranscriptVisible(merged.readerTranscriptVisible);
   merged.fixedFrontmatterProperties = normalizeFixedFrontmatterProperties(merged.fixedFrontmatterProperties);
+  merged.aiBaseUrl = normalizeBaseUrl(merged.aiBaseUrl || DEFAULT_SYNC_SETTINGS.aiBaseUrl);
+  merged.aiModel = toString(merged.aiModel).trim();
+  merged.aiPrompts = normalizeAiPrompts(merged.aiPrompts);
+  merged.aiSelectedPromptId = pickAiSelectedPromptId(merged.aiPrompts, merged.aiSelectedPromptId);
+  merged.aiEnabled = Boolean(merged.aiEnabled);
   let apiKey = normalizeApiKey(localSettings.obsidianApiKey);
   const legacySyncApiKey = normalizeApiKey(syncSettings.obsidianApiKey);
 
@@ -409,7 +444,8 @@ async function getMergedSettings() {
 
   return {
     ...merged,
-    obsidianApiKey: apiKey
+    obsidianApiKey: apiKey,
+    aiApiKey: normalizeApiKey(localSettings.aiApiKey)
   };
 }
 
@@ -428,11 +464,17 @@ async function saveSettings(settings) {
   syncPayload.readerChapterVisibility = normalizeReaderChapterVisibility(syncPayload.readerChapterVisibility);
   syncPayload.readerTranscriptVisible = normalizeReaderTranscriptVisible(syncPayload.readerTranscriptVisible);
   syncPayload.fixedFrontmatterProperties = normalizeFixedFrontmatterProperties(syncPayload.fixedFrontmatterProperties);
+  syncPayload.aiBaseUrl = normalizeBaseUrl(syncPayload.aiBaseUrl || DEFAULT_SYNC_SETTINGS.aiBaseUrl);
+  syncPayload.aiModel = toString(syncPayload.aiModel).trim();
+  syncPayload.aiPrompts = normalizeAiPrompts(syncPayload.aiPrompts);
+  syncPayload.aiSelectedPromptId = pickAiSelectedPromptId(syncPayload.aiPrompts, syncPayload.aiSelectedPromptId);
+  syncPayload.aiEnabled = Boolean(syncPayload.aiEnabled);
 
   await Promise.all([
     chrome.storage.sync.set(syncPayload),
     chrome.storage.local.set({
-      obsidianApiKey: normalizeApiKey(payload.obsidianApiKey)
+      obsidianApiKey: normalizeApiKey(payload.obsidianApiKey),
+      aiApiKey: normalizeApiKey(payload.aiApiKey)
     })
   ]);
 }
@@ -443,6 +485,10 @@ function toString(value) {
 
 function normalizeApiKey(value) {
   return toString(value).trim().replace(/^Bearer\s+/i, "").trim();
+}
+
+function normalizeBaseUrl(value) {
+  return toString(value).trim().replace(/\/+$/g, "");
 }
 
 function normalizeDownloadFormat(value) {
@@ -489,6 +535,151 @@ function normalizeFixedFrontmatterProperties(value) {
       value: normalizeFixedPropertyValue(item?.type, item?.value)
     }))
     .filter((item) => item.key && !isFixedPropertyRowEffectivelyEmpty(item.type, item.value));
+}
+
+function normalizeAiPrompts(value) {
+  if (!Array.isArray(value)) {
+    return DEFAULT_SYNC_SETTINGS.aiPrompts;
+  }
+
+  const prompts = value
+    .map((item) => ({
+      id: toString(item?.id).trim() || `prompt-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      name: toString(item?.name).trim(),
+      content: normalizeAiPromptContent(item)
+    }))
+    .filter((item) => item.name && item.content);
+
+  return prompts.length > 0 ? prompts : DEFAULT_SYNC_SETTINGS.aiPrompts;
+}
+
+function normalizeAiPromptContent(item) {
+  const content = toString(item?.content).trim();
+  if (toString(item?.id).trim() === "default-summary" && content === LEGACY_DEFAULT_AI_PROMPT) {
+    return DEFAULT_SYNC_SETTINGS.aiPrompts[0].content;
+  }
+  return content;
+}
+
+function pickAiSelectedPromptId(prompts, selectedId) {
+  const id = toString(selectedId).trim();
+  if (id && prompts.some((item) => item.id === id)) {
+    return id;
+  }
+  return prompts[0]?.id || "";
+}
+
+async function fetchAiModels(message) {
+  const baseUrl = normalizeBaseUrl(message.baseUrl);
+  const apiKey = normalizeApiKey(message.apiKey);
+  if (!baseUrl || !apiKey) {
+    throw new Error("缺少 AI API 地址或 API Key");
+  }
+
+  const endpoint = `${baseUrl}/models`;
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json"
+    },
+    cache: "no-store"
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(formatAiHttpError(response.status, text));
+  }
+
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error("模型接口返回的不是有效 JSON");
+  }
+
+  const models = Array.isArray(data?.data)
+    ? data.data.map((item) => toString(item?.id).trim()).filter(Boolean)
+    : [];
+  if (models.length === 0) {
+    throw new Error("没有从模型接口读取到可用模型");
+  }
+  return models;
+}
+
+async function summarizeText(message) {
+  const settings = await getMergedSettings();
+  if (!settings.aiEnabled) {
+    throw new Error("请先在设置中启用 AI 总结");
+  }
+
+  const baseUrl = normalizeBaseUrl(settings.aiBaseUrl);
+  const apiKey = normalizeApiKey(settings.aiApiKey);
+  const model = toString(message.model || settings.aiModel).trim();
+  const transcript = toString(message.text).trim();
+  const promptId = toString(message.promptId || settings.aiSelectedPromptId).trim();
+  const prompt =
+    settings.aiPrompts.find((item) => item.id === promptId) ||
+    settings.aiPrompts.find((item) => item.id === settings.aiSelectedPromptId) ||
+    settings.aiPrompts[0];
+
+  if (!baseUrl || !apiKey || !model) {
+    throw new Error("AI API 地址、API Key 或模型未配置完整");
+  }
+  if (!prompt?.content) {
+    throw new Error("请先配置 AI 提示词");
+  }
+  if (!transcript) {
+    throw new Error("没有可总结的字幕文本");
+  }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content: prompt.content
+        },
+        {
+          role: "user",
+          content: `数据来源：哔哩哔哩（Bilibili）视频字幕，不是 YouTube。\n视频标题：${
+            toString(message.title).trim() || "未知"
+          }\n\n字幕全文：\n${transcript}`
+        }
+      ],
+      temperature: 0.3
+    })
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(formatAiHttpError(response.status, text));
+  }
+
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error("AI 接口返回的不是有效 JSON");
+  }
+
+  const summary = toString(data?.choices?.[0]?.message?.content).trim();
+  if (!summary) {
+    throw new Error("AI 接口没有返回总结内容");
+  }
+  return summary;
+}
+
+function formatAiHttpError(status, bodyText) {
+  const detail = toString(bodyText).trim().slice(0, 240);
+  return detail ? `AI 接口 HTTP ${status}: ${detail}` : `AI 接口 HTTP ${status}`;
 }
 
 function normalizeFixedPropertyType(value) {

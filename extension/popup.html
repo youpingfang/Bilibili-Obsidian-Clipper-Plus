@@ -26,8 +26,20 @@
       <label class="label" for="subtitleSelect">字幕语言</label>
       <select id="subtitleSelect"></select>
 
-      <label class="label" for="preview">字幕预览</label>
-      <textarea id="preview" readonly wrap="off"></textarea>
+      <section class="split-preview" aria-label="字幕和 AI 总结">
+        <div class="preview-pane" data-source="subtitle">
+          <label class="label" for="preview">字幕预览</label>
+          <textarea id="preview" readonly wrap="off"></textarea>
+        </div>
+        <div class="preview-pane ai-pane" data-source="ai">
+          <div class="ai-head">
+            <label class="label" for="aiSummary">AI 总结</label>
+            <select id="aiPromptSelect" class="ai-prompt-select" aria-label="AI 提示词"></select>
+            <button id="summarizeBtn" type="button" class="mini-btn summarize-btn">总结</button>
+          </div>
+          <textarea id="aiSummary" wrap="off" placeholder="点击“总结”后显示 AI 分析结果"></textarea>
+        </div>
+      </section>
 
       <div class="actions">
         <button id="refreshBtn" type="button">刷新</button>
