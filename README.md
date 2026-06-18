@@ -47,7 +47,9 @@
 
 ### 从当前源码加载到 Chrome / Edge
 
-如果你是从 GitHub clone 或下载本项目源码，请注意：浏览器扩展的 `manifest.json` 在 `extension/` 目录里，不在项目根目录。
+如果你是从 GitHub clone 或下载本项目源码，请注意：浏览器要加载的是项目里面的 `extension/` 目录，不是项目根目录。
+
+> 也就是说，选择文件夹时请选 `Bilibili-Obsidian-Clipper/extension`。如果选了外层的 `Bilibili-Obsidian-Clipper`，浏览器会提示清单文件缺失或加载失败。
 
 1. 打开扩展管理页：
    - Chrome：`chrome://extensions/`
