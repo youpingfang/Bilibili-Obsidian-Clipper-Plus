@@ -187,20 +187,16 @@ async function triggerReaderModeInTab(tabId, readerUrl = "", retries = 12, delay
 }
 
 chrome.action.onClicked.addListener(async (tab) => {
-  const sourceTabId = tab?.id ? `?tabId=${encodeURIComponent(tab.id)}` : "";
-  const popupUrl = chrome.runtime.getURL(`popup.html${sourceTabId}`);
-
   try {
-    await chrome.windows.create({
-      url: popupUrl,
-      type: "popup",
-      width: 1180,
-      height: 900,
-      focused: true
-    });
+    if (!tab?.id || !isSupportedSubtitlePage(tab.url || "")) {
+      await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html") });
+      return;
+    }
+
+    await ensureReaderContentReady(tab.id);
+    await sendMessageToTab(tab.id, { type: "toggle-embedded-popup", tabId: tab.id });
   } catch (error) {
-    console.warn("[BOC] failed to open persistent popup window", error);
-    await chrome.tabs.create({ url: popupUrl });
+    console.warn("[BOC] failed to toggle embedded popup", error);
   }
 });
 

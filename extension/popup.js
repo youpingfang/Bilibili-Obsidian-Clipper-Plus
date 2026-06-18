@@ -106,7 +106,7 @@ function bindEvents() {
       return;
     }
     render(resp?.payload || latestPayload);
-    window.setTimeout(() => window.close(), 120);
+    window.setTimeout(closeAfterSuccessfulSave, 120);
   });
 
   el.summarizeBtn.addEventListener("click", summarizeCurrentSubtitle);
@@ -421,6 +421,22 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function isEmbeddedPopup() {
+  try {
+    return new URL(location.href).searchParams.get("embedded") === "1";
+  } catch {
+    return false;
+  }
+}
+
+async function closeAfterSuccessfulSave() {
+  if (isEmbeddedPopup()) {
+    await sendToContent({ type: "close-embedded-popup" });
+    return;
+  }
+  window.close();
 }
 
 function getSourceTabIdFromUrl() {

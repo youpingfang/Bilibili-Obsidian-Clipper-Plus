@@ -52,5 +52,11 @@
       "16": "icons/icon16.png",
       "32": "icons/icon32.png"
     }
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["popup.html", "popup.css", "popup.js"],
+      "matches": ["https://www.bilibili.com/*"]
+    }
+  ]
 }

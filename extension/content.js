@@ -396,6 +396,18 @@ function bindRuntimeEvents() {
       return false;
     }
 
+    if (message.type === "toggle-embedded-popup") {
+      toggleEmbeddedPopup(message.tabId);
+      sendResponse({ ok: true, payload: getPopupPayload() });
+      return false;
+    }
+
+    if (message.type === "close-embedded-popup") {
+      closeEmbeddedPopup();
+      sendResponse({ ok: true });
+      return false;
+    }
+
     if (message.type === "toggle-inline-panel") {
       toggleInlinePanel()
         .then(() => sendResponse({ ok: true, payload: getPopupPayload() }))
@@ -818,6 +830,44 @@ function resetClipState() {
     renderReadingView();
     renderReadingStatus("请先点击“刷新抓取”加载当前视频字幕。");
   }
+}
+
+function toggleEmbeddedPopup(tabId) {
+  const existing = document.getElementById("boc-embedded-popup-host");
+  if (existing) {
+    existing.remove();
+    return;
+  }
+
+  const host = document.createElement("div");
+  host.id = "boc-embedded-popup-host";
+  host.style.cssText = [
+    "position:fixed",
+    "right:16px",
+    "top:72px",
+    "width:640px",
+    "height:560px",
+    "max-width:calc(100vw - 24px)",
+    "max-height:calc(100vh - 88px)",
+    "z-index:2147483647",
+    "border-radius:14px",
+    "box-shadow:0 24px 46px rgba(0,0,0,.24)",
+    "overflow:hidden",
+    "background:#f1f1f1"
+  ].join(";");
+
+  const frame = document.createElement("iframe");
+  const sourceTabId = Number(tabId || 0) || 0;
+  const query = sourceTabId ? `?tabId=${encodeURIComponent(sourceTabId)}&embedded=1` : "?embedded=1";
+  frame.src = chrome.runtime.getURL(`popup.html${query}`);
+  frame.title = "Bilibili Obsidian Clipper";
+  frame.style.cssText = "width:100%;height:100%;border:0;display:block;background:#f1f1f1";
+  host.appendChild(frame);
+  document.documentElement.appendChild(host);
+}
+
+function closeEmbeddedPopup() {
+  document.getElementById("boc-embedded-popup-host")?.remove();
 }
 
 async function toggleInlinePanel() {
