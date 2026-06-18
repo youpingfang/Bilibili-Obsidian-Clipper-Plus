@@ -102,8 +102,11 @@ function bindEvents() {
     });
     if (!resp?.ok) {
       setMessage(`发送失败：${resp?.error || "未知错误"}`);
+      render(resp?.payload || latestPayload);
+      return;
     }
     render(resp?.payload || latestPayload);
+    window.setTimeout(() => window.close(), 120);
   });
 
   el.summarizeBtn.addEventListener("click", summarizeCurrentSubtitle);
@@ -420,8 +423,25 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function getSourceTabIdFromUrl() {
+  try {
+    const tabId = Number(new URL(location.href).searchParams.get("tabId") || 0);
+    return Number.isFinite(tabId) && tabId > 0 ? tabId : null;
+  } catch {
+    return null;
+  }
+}
+
 async function getActiveTab() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const sourceTabId = getSourceTabIdFromUrl();
+  if (sourceTabId) {
+    const sourceTab = await chrome.tabs.get(sourceTabId).catch(() => null);
+    if (sourceTab) {
+      return sourceTab;
+    }
+  }
+
+  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   return tabs?.[0] || null;
 }
 

@@ -187,16 +187,20 @@ async function triggerReaderModeInTab(tabId, readerUrl = "", retries = 12, delay
 }
 
 chrome.action.onClicked.addListener(async (tab) => {
-  try {
-    if (!tab?.id || !isSupportedSubtitlePage(tab.url || "")) {
-      await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html") });
-      return;
-    }
+  const sourceTabId = tab?.id ? `?tabId=${encodeURIComponent(tab.id)}` : "";
+  const popupUrl = chrome.runtime.getURL(`popup.html${sourceTabId}`);
 
-    await ensureReaderContentReady(tab.id);
-    await sendMessageToTab(tab.id, { type: "toggle-inline-panel" });
+  try {
+    await chrome.windows.create({
+      url: popupUrl,
+      type: "popup",
+      width: 1180,
+      height: 900,
+      focused: true
+    });
   } catch (error) {
-    console.warn("[BOC] failed to toggle inline panel", error);
+    console.warn("[BOC] failed to open persistent popup window", error);
+    await chrome.tabs.create({ url: popupUrl });
   }
 });
 
