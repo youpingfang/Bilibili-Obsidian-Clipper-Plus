@@ -4896,17 +4896,12 @@ function buildMarkdown(meta, body, settings) {
 
   const page = extractPageIndex(location.href);
   const embedIframe = buildBilibiliEmbedIframe(meta, page);
-  const intro = String(meta.description || "").trim();
 
   const lines = [];
   if (frontMatter) {
     lines.push(frontMatter, "");
   }
   lines.push(embedIframe, "");
-
-  if (intro) {
-    lines.push("## 简介", "", intro, "");
-  }
 
   if (chapterLines.length > 0) {
     lines.push("## 章节", "", ...chapterLines, "");
@@ -4930,7 +4925,6 @@ function buildAiSummaryMarkdown(meta, summary, settings) {
   const frontMatter = buildFrontMatter(meta, settings, created, tagsYaml);
   const page = extractPageIndex(location.href);
   const embedIframe = buildBilibiliEmbedIframe(meta, page);
-  const intro = String(meta.description || "").trim();
   const summaryText = String(summary || "").trim();
 
   const lines = [];
@@ -4938,10 +4932,6 @@ function buildAiSummaryMarkdown(meta, summary, settings) {
     lines.push(frontMatter, "");
   }
   lines.push(embedIframe, "");
-
-  if (intro) {
-    lines.push("## 简介", "", intro, "");
-  }
 
   if (chapterLines.length > 0) {
     lines.push("## 章节", "", ...chapterLines, "");
