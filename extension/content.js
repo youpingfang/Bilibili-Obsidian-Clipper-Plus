@@ -1143,7 +1143,7 @@ function extractWebPageContent() {
   const siteName = pickMetaContent("og:site_name") || location.hostname;
   const description = pickMetaContent("description") || pickMetaContent("og:description") || "";
   const main = pickReadableRoot();
-  const text = normalizeWebText(extractReadableText(main));
+  const text = normalizeArticleBodyText(extractReadableText(main), title);
   return {
     title: String(title).trim(),
     url: cleanVideoUrl(),
@@ -1322,6 +1322,51 @@ function normalizeWebText(text) {
     .filter(Boolean)
     .join("\n")
     .slice(0, 50000);
+}
+
+function normalizeArticleBodyText(text, title = "") {
+  const normalizedTitle = normalizeLooseText(title);
+  const lines = normalizeWebText(text).split("\n");
+  const kept = [];
+  for (const line of lines) {
+    if (shouldStopArticleBodyAtLine(line)) {
+      break;
+    }
+    if (shouldDropArticleBodyLine(line, normalizedTitle, kept.length)) {
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept.join("\n").slice(0, 50000);
+}
+
+function shouldDropArticleBodyLine(line, normalizedTitle, keptCount) {
+  const text = String(line || "").trim();
+  if (!text) {
+    return true;
+  }
+  const loose = normalizeLooseText(text);
+  if (normalizedTitle && keptCount < 8 && (loose === normalizedTitle || normalizedTitle.includes(loose) || loose.includes(normalizedTitle))) {
+    return true;
+  }
+  if (/^(原创|转载|版权声明|本内容遵循|本文为博主原创文章|作者[:：]|发布时间[:：]|发布于|编辑于|阅读量|浏览量|点赞|收藏|评论|标签|分类专栏|文章标签)\b/.test(text)) {
+    return true;
+  }
+  if (/^(上一篇|下一篇|相关推荐|相关文章|热门推荐|目录|收起目录|展开目录)$/.test(text)) {
+    return true;
+  }
+  return false;
+}
+
+function shouldStopArticleBodyAtLine(line) {
+  const text = String(line || "").trim();
+  return /^(参考文献|参考资料|References|Bibliography|相关阅读|相关文章|相关推荐|推荐阅读|版权声明|评论区|全部评论|附录|Appendix)\s*[:：]?$/.test(text);
+}
+
+function normalizeLooseText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[\s\p{P}]+/gu, "");
 }
 
 function buildWebMarkdown(web, settings) {
