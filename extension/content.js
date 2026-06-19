@@ -468,7 +468,8 @@ function bindRuntimeEvents() {
     if (message.type === "popup-send-obsidian") {
       sendToObsidian({
         saveSource: message.saveSource,
-        aiSummary: message.aiSummary
+        aiSummary: message.aiSummary,
+        editedText: message.editedText
       })
         .then(() => sendResponse({ ok: true, payload: getPopupPayload() }))
         .catch((error) =>
@@ -519,7 +520,7 @@ function buildUiHtml() {
       </select>
 
       <label class="boc-label" for="${ids.preview}">字幕预览</label>
-      <textarea id="${ids.preview}" readonly></textarea>
+      <textarea id="${ids.preview}" placeholder="可编辑：你可以粘贴任意文本后再进行 AI 总结"></textarea>
 
       <div class="boc-actions">
         <button id="${ids.refreshBtn}" type="button">刷新抓取</button>
@@ -1795,13 +1796,17 @@ function getPopupPayload() {
 }
 
 async function copyMarkdown() {
-  if (!state.markdown) {
-    setMessage("没有可复制的内容，请先刷新抓取。");
+  const editedText = getEditedPreviewText().trim();
+  const content = editedText && editedText !== String(state.txt || "").trim()
+    ? buildManualClipMarkdown(state, editedText, state.settings || DEFAULT_SETTINGS)
+    : state.markdown;
+  if (!content) {
+    setMessage("没有可复制的内容，请先刷新抓取，或在预览框粘贴文本。");
     return;
   }
 
   try {
-    await navigator.clipboard.writeText(state.markdown);
+    await navigator.clipboard.writeText(content);
     setMessage("Markdown 已复制到剪贴板。");
   } catch (error) {
     setMessage(`复制失败：${getErrorMessage(error)}`);
@@ -1812,7 +1817,15 @@ async function downloadSubtitle() {
   state.settings = await getSettings();
   const format = normalizeDownloadFormat(state.settings?.downloadFormat);
   const isWebClip = state.contentType === "web";
-  const content = isWebClip ? state.markdown || state.txt : format === "txt" ? state.txt : state.srt;
+  const editedText = getEditedPreviewText().trim();
+  const hasManualText = editedText && editedText !== String(state.txt || "").trim();
+  const content = hasManualText
+    ? buildManualClipMarkdown(state, editedText, state.settings || DEFAULT_SETTINGS)
+    : isWebClip
+      ? state.markdown || state.txt
+      : format === "txt"
+        ? state.txt
+        : state.srt;
   if (!content) {
     setMessage(isWebClip ? "没有可下载的网页内容，请先刷新抓取。" : "没有可下载的字幕，请先刷新抓取。");
     return;
@@ -1839,8 +1852,10 @@ async function sendToObsidian(options = {}) {
   state.settings = await getSettings();
   const saveSource = options?.saveSource === "ai" ? "ai" : "subtitle";
   const aiSummary = String(options?.aiSummary || "").trim();
-  if (!state.markdown && saveSource !== "ai") {
-    setMessage("没有可发送内容，请先刷新抓取。");
+  const editedText = String(options?.editedText || getEditedPreviewText() || "").trim();
+  const hasManualText = editedText && editedText !== String(state.txt || "").trim();
+  if (!state.markdown && !hasManualText && saveSource !== "ai") {
+    setMessage("没有可发送内容，请先刷新抓取，或在预览框粘贴文本。");
     return;
   }
   if (saveSource === "ai" && !aiSummary) {
@@ -1860,7 +1875,11 @@ async function sendToObsidian(options = {}) {
   }
 
   try {
-    const content = saveSource === "ai" ? buildAiSummaryMarkdown(state, aiSummary, state.settings) : state.markdown;
+    const content = saveSource === "ai"
+      ? buildAiSummaryMarkdown(state, aiSummary, state.settings)
+      : hasManualText
+        ? buildManualClipMarkdown(state, editedText, state.settings)
+        : state.markdown;
     await writeNoteByLocalApi(baseUrl, apiKey, filepath, content);
     setMessage(`已写入 Obsidian：${filepath}`);
     closeInlinePanel();
@@ -5046,6 +5065,38 @@ function normalizeSubtitleUrl(url) {
   }
 
   return `https://${url.replace(/^\/+/, "")}`;
+}
+
+function getEditedPreviewText() {
+  const preview = document.getElementById(ids.preview);
+  return typeof preview?.value === "string" ? preview.value : "";
+}
+
+function buildManualClipMarkdown(meta, text, settings) {
+  const created = formatLocalDate();
+  const tags = String(settings?.tags || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const tagsYaml = tags.length === 0 ? "[]" : `[${tags.map((tag) => `"${escapeYaml(tag)}"`).join(", ")}]`;
+  const title = String(meta?.title || document.title || "手动剪藏").trim();
+  const url = cleanVideoUrl();
+  return [
+    "---",
+    `title: "${escapeYaml(title)}"`,
+    `url: "${escapeYaml(url)}"`,
+    `created: "${created}"`,
+    `tags: ${tagsYaml}`,
+    "---",
+    "",
+    `# ${title}`,
+    "",
+    `> Source: ${url}`,
+    "",
+    "## 内容",
+    "",
+    String(text || "").trim() || "（暂无内容）"
+  ].join("\n");
 }
 
 function buildSubtitlePreview(body, settings) {
