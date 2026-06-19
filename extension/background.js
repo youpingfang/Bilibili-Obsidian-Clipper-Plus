@@ -156,6 +156,15 @@ function isSupportedSubtitlePage(url) {
   }
 }
 
+function isInjectableClipPage(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 async function triggerReaderModeInTab(tabId, readerUrl = "", retries = 12, delayMs = 300) {
   for (let attempt = 0; attempt < retries; attempt += 1) {
     if (attempt > 0) {
@@ -188,7 +197,7 @@ async function triggerReaderModeInTab(tabId, readerUrl = "", retries = 12, delay
 
 chrome.action.onClicked.addListener(async (tab) => {
   try {
-    if (!tab?.id || !isSupportedSubtitlePage(tab.url || "")) {
+    if (!tab?.id || !isInjectableClipPage(tab.url || "")) {
       await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html") });
       return;
     }
