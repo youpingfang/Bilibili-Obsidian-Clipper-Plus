@@ -1144,14 +1144,12 @@ function extractWebPageContent() {
   const description = pickMetaContent("description") || pickMetaContent("og:description") || "";
   const main = pickReadableRoot();
   const text = normalizeWebText(extractReadableText(main));
-  const links = extractReadableLinks(main);
   return {
     title: String(title).trim(),
     url: cleanVideoUrl(),
     siteName: String(siteName).trim(),
     description: String(description).trim(),
-    text: text || String(document.body?.innerText || "").trim(),
-    links
+    text: text || ""
   };
 }
 
@@ -1166,47 +1164,75 @@ function getReadableHeading() {
 }
 
 function pickReadableRoot() {
-  const preferredSelectors = [
+  const candidates = collectReadableCandidates();
+  let best = null;
+  let bestScore = 0;
+  candidates.forEach((node) => {
+    const text = normalizeWebText(extractReadableText(node));
+    const score = scoreReadableNode(node, text);
+    if (score > bestScore) {
+      best = node;
+      bestScore = score;
+    }
+  });
+  return best || document.body;
+}
+
+function collectReadableCandidates() {
+  const selectors = [
+    "article",
+    "main",
+    "[role='main']",
+    "[itemprop='articleBody']",
     "#content_views",
     "#article_content",
-    ".blog-content-box #content_views",
+    "#article",
+    "#post",
+    ".markdown_views",
+    ".article",
+    ".article-body",
     ".article_content",
     ".article-content",
     ".article_content_container",
-    ".markdown_views",
-    ".post-content",
-    ".entry-content",
-    "article [itemprop='articleBody']",
-    "article"
-  ];
-  for (const selector of preferredSelectors) {
-    const node = document.querySelector(selector);
-    if (node && normalizeWebText(extractReadableText(node)).length >= 120) {
-      return node;
-    }
-  }
-
-  const selectors = [
-    "main",
-    "[role='main']",
-    ".main-content",
-    ".article",
     ".post",
-    ".content"
+    ".post-body",
+    ".post-content",
+    ".entry",
+    ".entry-content",
+    ".main-content",
+    ".content",
+    ".content-body"
   ];
-  let best = null;
-  let bestScore = 0;
+  const seen = new Set();
+  const candidates = [];
   selectors.forEach((selector) => {
     document.querySelectorAll(selector).forEach((node) => {
-      const text = normalizeWebText(extractReadableText(node));
-      const score = scoreReadableNode(node, text);
-      if (score > bestScore) {
-        best = node;
-        bestScore = score;
+      if (!seen.has(node) && isReadableCandidateElement(node)) {
+        seen.add(node);
+        candidates.push(node);
       }
     });
   });
-  return best || document.body;
+
+  document.querySelectorAll("p").forEach((paragraph) => {
+    const parent = paragraph.closest("section, div, article, main") || paragraph.parentElement;
+    if (parent && !seen.has(parent) && isReadableCandidateElement(parent)) {
+      seen.add(parent);
+      candidates.push(parent);
+    }
+  });
+  return candidates;
+}
+
+function isReadableCandidateElement(node) {
+  if (!node || node === document.documentElement || node === document.body) {
+    return false;
+  }
+  if (node.closest("nav, header, footer, aside, form, [hidden], [aria-hidden='true']")) {
+    return false;
+  }
+  const marker = `${node.id || ""} ${node.className || ""}`.toLowerCase();
+  return !/(comment|recommend|related|sidebar|toolbar|footer|header|nav|menu|login|profile|user|advert|ad-)/.test(marker);
 }
 
 function scoreReadableNode(node, text) {
@@ -1214,11 +1240,18 @@ function scoreReadableNode(node, text) {
   if (length < 120) {
     return 0;
   }
+  const paragraphs = Array.from(node.querySelectorAll("p, h1, h2, h3, pre, blockquote, li"));
+  const paragraphTextLength = paragraphs.reduce((sum, item) => sum + normalizeWebText(item.textContent || "").length, 0);
   const linkTextLength = Array.from(node.querySelectorAll("a"))
     .reduce((sum, link) => sum + normalizeWebText(link.textContent || "").length, 0);
-  const linkPenalty = length > 0 ? Math.min(0.65, linkTextLength / length) : 0;
-  const paragraphBonus = Math.min(1200, node.querySelectorAll("p, h1, h2, h3, pre, code, blockquote, li").length * 40);
-  return length * (1 - linkPenalty) + paragraphBonus;
+  const linkRatio = length > 0 ? linkTextLength / length : 1;
+  const paragraphDensity = length > 0 ? paragraphTextLength / length : 0;
+  const headingBonus = node.querySelector("h1, h2") ? 250 : 0;
+  const semanticBonus = /article|content|post|entry|markdown|body/.test(`${node.id || ""} ${node.className || ""}`.toLowerCase()) ? 400 : 0;
+  const linkPenalty = Math.min(0.8, linkRatio) * length;
+  const densityBonus = Math.min(1, paragraphDensity) * 900;
+  const paragraphBonus = Math.min(1400, paragraphs.length * 45);
+  return length + densityBonus + paragraphBonus + headingBonus + semanticBonus - linkPenalty;
 }
 
 function extractReadableText(root) {
@@ -1291,24 +1324,6 @@ function normalizeWebText(text) {
     .slice(0, 50000);
 }
 
-function extractReadableLinks(root) {
-  const seen = new Set();
-  return Array.from((root || document).querySelectorAll("a[href]"))
-    .map((node) => ({
-      text: String(node.textContent || "").replace(/\s+/g, " ").trim(),
-      href: node.href
-    }))
-    .filter((item) => item.text && item.href && !item.href.startsWith("javascript:"))
-    .filter((item) => {
-      if (seen.has(item.href)) {
-        return false;
-      }
-      seen.add(item.href);
-      return true;
-    })
-    .slice(0, 20);
-}
-
 function buildWebMarkdown(web, settings) {
   const created = formatLocalDate();
   const tags = String(settings?.tags || "")
@@ -1329,18 +1344,8 @@ function buildWebMarkdown(web, settings) {
     "",
     `> Source: ${web.url}`
   ];
-  if (web.description) {
-    lines.push("", `> ${web.description}`);
-  }
   lines.push("", "## 正文", "", web.text || "（未提取到正文）");
-  if (web.links.length > 0) {
-    lines.push("", "## 链接", "", ...web.links.map((item) => `- [${escapeMarkdownLinkText(item.text)}](${item.href})`));
-  }
   return lines.join("\n");
-}
-
-function escapeMarkdownLinkText(value) {
-  return String(value || "").replace(/[\[\]]/g, "");
 }
 
 async function refreshClip() {
