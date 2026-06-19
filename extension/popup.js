@@ -71,6 +71,15 @@ function bindEvents() {
     const payload = await ensurePayload();
     const settings = await getSettingsFromRuntime();
     const current = getCurrentOutput(payload, settings);
+    if (payload?.contentType === "web" && current.source !== "ai") {
+      if (!current.downloadText) {
+        setMessage("没有可下载的网页内容。");
+        return;
+      }
+      downloadTextFile(current.downloadText, `${sanitizeFileName(payload?.title || "web-clip")}.md`);
+      setMessage("已下载网页 Markdown。");
+      return;
+    }
     if (current.source === "ai") {
       if (!current.downloadText) {
         setMessage("没有可下载的 AI 总结。");
@@ -195,6 +204,15 @@ function getCurrentOutput(payload, settings = latestSettings) {
       readText: aiText
     };
   }
+  if (payload?.contentType === "web") {
+    return {
+      source: "web",
+      label: "网页 Markdown",
+      copyText: payload?.markdown || payload?.txt || "",
+      downloadText: payload?.markdown || payload?.txt || "",
+      readText: payload?.txt || payload?.subtitlePreview || ""
+    };
+  }
   const format = normalizeDownloadFormat(settings?.downloadFormat || payload?.downloadFormat);
   return {
     source: "subtitle",
@@ -218,7 +236,7 @@ function downloadTextFile(content, filename) {
 }
 
 function buildAiSummaryDocument(payload, summary) {
-  const title = String(payload?.title || "Bilibili AI 总结").trim();
+  const title = String(payload?.title || "AI 总结").trim();
   const url = String(payload?.url || "").trim();
   return [`# ${title}`, url ? `\n${url}` : "", "\n## AI 总结\n", summary].join("\n").trim();
 }
@@ -253,7 +271,7 @@ async function refreshFromTab() {
   setSelectedSaveSource("subtitle");
   const resp = await sendToContent({ type: "popup-refresh" });
   if (!resp?.ok) {
-    const errorText = resp?.error || "请在 B 站视频页使用。";
+    const errorText = resp?.error || "请在可读取的网页使用。";
     setStatus(`抓取失败：${errorText}`);
   }
   render(resp?.payload || latestPayload);
@@ -288,7 +306,7 @@ function render(payload) {
 
   const options = payload.subtitleOptions || [];
   if (options.length === 0) {
-    el.subtitleSelect.innerHTML = '<option value="">暂无字幕</option>';
+    el.subtitleSelect.innerHTML = `<option value="">${payload.contentType === "web" ? "网页正文" : "暂无字幕"}</option>`;
     el.subtitleSelect.disabled = true;
   } else {
     el.subtitleSelect.innerHTML = options
@@ -306,6 +324,9 @@ function render(payload) {
   }
 
   el.preview.value = payload.subtitlePreview || "";
+  document.querySelector('label[for="subtitleSelect"]').textContent = payload.contentType === "web" ? "内容类型" : "字幕语言";
+  document.querySelector('label[for="preview"]').textContent = payload.contentType === "web" ? "网页正文预览" : "字幕预览";
+  el.readingViewBtn.disabled = payload.contentType === "web";
   updateAiControls();
 }
 
@@ -320,7 +341,7 @@ async function summarizeCurrentSubtitle() {
   }
   const text = payload?.txt || payload?.subtitlePreview || "";
   if (!text.trim()) {
-    setMessage("没有可总结字幕，请先刷新。");
+    setMessage(payload?.contentType === "web" ? "没有可总结网页内容，请先刷新。" : "没有可总结字幕，请先刷新。");
     return;
   }
 
@@ -476,7 +497,7 @@ async function sendToContent(message) {
   try {
     return await sendMessageToTab(tabId, message);
   } catch (error) {
-    if (shouldRetryAfterInjection(error) && isSupportedSubtitlePage(tab?.url || "")) {
+    if (shouldRetryAfterInjection(error) && isInjectableClipPage(tab?.url || "")) {
       try {
         await ensureContentScriptReady(tabId);
         await sleep(80);
@@ -487,7 +508,7 @@ async function sendToContent(message) {
     }
 
     const normalizedError = normalizeContentErrorMessage(error);
-    setStatus("请在 B 站视频页使用插件。");
+    setStatus("当前网页暂不支持插件注入。");
     setMessage(normalizedError);
     return { ok: false, error: normalizedError, payload: latestPayload };
   }
@@ -515,6 +536,15 @@ function isSupportedSubtitlePage(url) {
     return parsed.pathname === "/list/watchlater" ||
       parsed.pathname === "/list/watchlater/" ||
       parsed.pathname.startsWith("/video/");
+  } catch {
+    return false;
+  }
+}
+
+function isInjectableClipPage(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
   } catch {
     return false;
   }

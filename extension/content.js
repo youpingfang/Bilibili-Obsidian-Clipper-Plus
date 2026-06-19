@@ -34,6 +34,7 @@ globalThis.__BOC_CONTENT_SCRIPT_LOADED__ = BOC_VERSION;
 const state = {
   currentUrl: location.href,
   fetchRunId: 0,
+  contentType: "bilibili",
   bvid: "",
   aid: "",
   cid: "",
@@ -145,6 +146,19 @@ function replaceReaderModeUrl(nextUrl) {
 function isWatchlaterPage(url = location.href) {
   try {
     return new URL(url).pathname.replace(/\/+$/, "") === "/list/watchlater";
+  } catch {
+    return false;
+  }
+}
+
+function isBilibiliClipPage(url = location.href) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== "www.bilibili.com") {
+      return false;
+    }
+    const path = parsed.pathname.replace(/\/+$/, "");
+    return path === "/list/watchlater" || path.startsWith("/video/");
   } catch {
     return false;
   }
@@ -793,6 +807,7 @@ function startUrlWatcher() {
 }
 
 function resetClipState() {
+  state.contentType = isBilibiliClipPage() ? "bilibili" : "web";
   state.bvid = "";
   state.aid = "";
   state.cid = "";
@@ -1096,18 +1111,174 @@ function closeInlinePanel() {
   panel.setAttribute("aria-hidden", "true");
 }
 
+
+async function refreshWebClip(runId) {
+  const web = extractWebPageContent();
+  ensureRunActive(runId);
+  state.contentType = "web";
+  state.title = web.title;
+  state.author = web.siteName;
+  state.uploadDate = "";
+  state.description = web.description;
+  state.subtitles = [];
+  state.selectedSubtitleId = "";
+  state.selectedSubtitleUrl = "";
+  state.selectedSubtitleLang = "";
+  state.subtitleBody = [];
+  state.subtitleFetchState = "ready";
+  state.chapters = [];
+  state.markdown = buildWebMarkdown(web, state.settings);
+  state.srt = "";
+  state.txt = web.text;
+  state.currentClipSignature = computeCurrentClipSignature();
+  renderMeta();
+  renderSubtitleSelect();
+  byId(ids.preview).value = web.text;
+  setStatus("网页内容抓取完成，可以复制或发送到 Obsidian。");
+}
+
+function extractWebPageContent() {
+  const title = pickMetaContent("og:title") || document.title || getReadableHeading() || "未命名网页";
+  const siteName = pickMetaContent("og:site_name") || location.hostname;
+  const description = pickMetaContent("description") || pickMetaContent("og:description") || "";
+  const main = pickReadableRoot();
+  const text = normalizeWebText(extractReadableText(main));
+  const links = extractReadableLinks(main);
+  return {
+    title: String(title).trim(),
+    url: cleanVideoUrl(),
+    siteName: String(siteName).trim(),
+    description: String(description).trim(),
+    text: text || String(document.body?.innerText || "").trim(),
+    links
+  };
+}
+
+function pickMetaContent(name) {
+  const safeName = String(name || "").replace(/"/g, '\\"');
+  const node = document.querySelector(`meta[name="${safeName}"], meta[property="${safeName}"]`);
+  return String(node?.getAttribute("content") || "").trim();
+}
+
+function getReadableHeading() {
+  return String(document.querySelector("h1")?.textContent || "").trim();
+}
+
+function pickReadableRoot() {
+  const selectors = [
+    "article",
+    "main",
+    "[role='main']",
+    ".article",
+    ".post",
+    ".entry-content",
+    ".content",
+    "body"
+  ];
+  let best = document.body;
+  let bestLength = 0;
+  selectors.forEach((selector) => {
+    document.querySelectorAll(selector).forEach((node) => {
+      const length = normalizeWebText(extractReadableText(node)).length;
+      if (length > bestLength) {
+        best = node;
+        bestLength = length;
+      }
+    });
+  });
+  return best || document.body;
+}
+
+function extractReadableText(root) {
+  if (!root) {
+    return "";
+  }
+  const clone = root.cloneNode(true);
+  clone.querySelectorAll("script, style, noscript, iframe, svg, canvas, nav, footer, header, aside, form, button, input, textarea, select, [hidden], [aria-hidden='true']").forEach((node) => node.remove());
+  return clone.innerText || clone.textContent || "";
+}
+
+function normalizeWebText(text) {
+  return String(text || "")
+    .replace(/\u00a0/g, " ")
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 50000);
+}
+
+function extractReadableLinks(root) {
+  const seen = new Set();
+  return Array.from((root || document).querySelectorAll("a[href]"))
+    .map((node) => ({
+      text: String(node.textContent || "").replace(/\s+/g, " ").trim(),
+      href: node.href
+    }))
+    .filter((item) => item.text && item.href && !item.href.startsWith("javascript:"))
+    .filter((item) => {
+      if (seen.has(item.href)) {
+        return false;
+      }
+      seen.add(item.href);
+      return true;
+    })
+    .slice(0, 20);
+}
+
+function buildWebMarkdown(web, settings) {
+  const created = formatLocalDate();
+  const tags = String(settings?.tags || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const tagsYaml = tags.length === 0 ? "[]" : `[${tags.map((tag) => `"${escapeYaml(tag)}"`).join(", ")}]`;
+  const lines = [
+    "---",
+    `title: "${escapeYaml(web.title)}"`,
+    `url: "${escapeYaml(web.url)}"`,
+    `site: "${escapeYaml(web.siteName || "unknown")}"`,
+    `created: "${created}"`,
+    `tags: ${tagsYaml}`,
+    "---",
+    "",
+    `# ${web.title}`,
+    "",
+    `> Source: ${web.url}`
+  ];
+  if (web.description) {
+    lines.push("", `> ${web.description}`);
+  }
+  lines.push("", "## 正文", "", web.text || "（未提取到正文）");
+  if (web.links.length > 0) {
+    lines.push("", "## 链接", "", ...web.links.map((item) => `- [${escapeMarkdownLinkText(item.text)}](${item.href})`));
+  }
+  return lines.join("\n");
+}
+
+function escapeMarkdownLinkText(value) {
+  return String(value || "").replace(/[\[\]]/g, "");
+}
+
 async function refreshClip() {
   const runId = ++state.fetchRunId;
   try {
     setBusyState(true);
     setMessage("");
-    setStatus("正在抓取视频信息...");
+    const isWebClip = !isBilibiliClipPage(location.href);
+    state.contentType = isWebClip ? "web" : "bilibili";
+    setStatus(isWebClip ? "正在抓取网页内容..." : "正在抓取视频信息...");
     state.subtitleFetchState = "loading";
     if (state.readingViewOpen) {
       renderReadingView();
     }
     state.settings = await getSettings();
     ensureRunActive(runId);
+
+    if (isWebClip) {
+      await refreshWebClip(runId);
+      return;
+    }
 
     state.bvid = extractBvid(location.href);
     if (!state.bvid) {
@@ -1496,6 +1667,20 @@ async function clearSubtitleCache(bvid, cid, lang) {
 
 function renderMeta() {
   const meta = byId(ids.meta);
+  if (state.contentType === "web") {
+    if (!state.title && !state.txt) {
+      meta.innerHTML = '<div class="boc-meta-item">尚未抓取网页内容</div>';
+      return;
+    }
+    meta.innerHTML = `
+      <div class="boc-meta-item"><strong>标题：</strong>${escapeHtml(state.title || "未命名网页")}</div>
+      <div class="boc-meta-item"><strong>URL：</strong>${escapeHtml(cleanVideoUrl())}</div>
+      <div class="boc-meta-item"><strong>站点：</strong>${escapeHtml(state.author || "未知")}</div>
+      <div class="boc-meta-item"><strong>字数：</strong>${escapeHtml(String(state.txt.length))}</div>
+    `;
+    return;
+  }
+
   if (!state.bvid) {
     meta.innerHTML = '<div class="boc-meta-item">尚未抓取视频信息</div>';
     return;
@@ -1589,6 +1774,7 @@ function getPopupPayload() {
 
   return {
     contentVersion: BOC_VERSION,
+    contentType: state.contentType || "bilibili",
     url: cleanVideoUrl(),
     title: state.title || "",
     author: state.author || "",
@@ -1596,7 +1782,10 @@ function getPopupPayload() {
     tags: String(state.settings?.tags || ""),
     status: state.statusText || "",
     message: state.messageText || "",
-    subtitlePreview: buildSubtitlePreview(state.subtitleBody || [], state.settings || DEFAULT_SETTINGS),
+    subtitlePreview:
+      state.contentType === "web"
+        ? state.txt || ""
+        : buildSubtitlePreview(state.subtitleBody || [], state.settings || DEFAULT_SETTINGS),
     markdown: state.markdown || "",
     srt: state.srt || "",
     txt: state.txt || "",
@@ -1622,15 +1811,16 @@ async function copyMarkdown() {
 async function downloadSubtitle() {
   state.settings = await getSettings();
   const format = normalizeDownloadFormat(state.settings?.downloadFormat);
-  const content = format === "txt" ? state.txt : state.srt;
+  const isWebClip = state.contentType === "web";
+  const content = isWebClip ? state.markdown || state.txt : format === "txt" ? state.txt : state.srt;
   if (!content) {
-    setMessage("没有可下载的字幕，请先刷新抓取。");
+    setMessage(isWebClip ? "没有可下载的网页内容，请先刷新抓取。" : "没有可下载的字幕，请先刷新抓取。");
     return;
   }
 
-  const safeTitle = sanitizeFileName(state.title || state.bvid || "bilibili-subtitle");
+  const safeTitle = sanitizeFileName(state.title || state.bvid || (isWebClip ? "web-clip" : "bilibili-subtitle"));
   const langSuffix = sanitizeFileName(state.selectedSubtitleLang || "subtitle") || "subtitle";
-  const filename = `${safeTitle}.${langSuffix}.${format}`;
+  const filename = isWebClip ? `${safeTitle}.md` : `${safeTitle}.${langSuffix}.${format}`;
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
 
@@ -5263,9 +5453,9 @@ function buildNoteFilename(meta) {
     baseParts.push(formatLocalDate());
   }
 
-  baseParts.push(meta.title || meta.bvid || "bilibili-subtitle");
+  baseParts.push(meta.title || meta.bvid || (meta.contentType === "web" ? "web-clip" : "bilibili-subtitle"));
 
-  if (Number(meta.pageCount) > 1) {
+  if (meta.contentType !== "web" && Number(meta.pageCount) > 1) {
     baseParts.push(`P${Number(meta.pageIndex) > 0 ? Number(meta.pageIndex) : 1}`);
     const pageTitle = String(meta.pageTitle || "").trim();
     if (pageTitle) {
@@ -5274,7 +5464,7 @@ function buildNoteFilename(meta) {
   }
 
   const baseName = sanitizeFileName(baseParts.filter(Boolean).join("-"));
-  return `${baseName || "bilibili-subtitle"}.md`;
+  return `${baseName || (meta.contentType === "web" ? "web-clip" : "bilibili-subtitle")}.md`;
 }
 
 function normalizeFolder(input) {

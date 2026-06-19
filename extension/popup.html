@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bilibili Clipper</title>
+    <title>Obsidian Clipper</title>
     <link rel="stylesheet" href="./popup.css" />
   </head>
   <body>
     <main class="popup">
       <header class="top">
-        <strong>B站字幕</strong>
+        <strong>网页剪藏</strong>
         <button id="settingsBtn" type="button" class="ghost">设置</button>
       </header>
 
@@ -26,9 +26,9 @@
       <label class="label" for="subtitleSelect">字幕语言</label>
       <select id="subtitleSelect"></select>
 
-      <section class="split-preview" aria-label="字幕和 AI 总结">
+      <section class="split-preview" aria-label="内容和 AI 总结">
         <div class="preview-pane" data-source="subtitle">
-          <label class="label" for="preview">字幕预览</label>
+          <label class="label" for="preview">内容预览</label>
           <textarea id="preview" readonly wrap="off"></textarea>
         </div>
         <div class="preview-pane ai-pane" data-source="ai">
