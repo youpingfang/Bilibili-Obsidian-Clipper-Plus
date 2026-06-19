@@ -1166,28 +1166,59 @@ function getReadableHeading() {
 }
 
 function pickReadableRoot() {
+  const preferredSelectors = [
+    "#content_views",
+    "#article_content",
+    ".blog-content-box #content_views",
+    ".article_content",
+    ".article-content",
+    ".article_content_container",
+    ".markdown_views",
+    ".post-content",
+    ".entry-content",
+    "article [itemprop='articleBody']",
+    "article"
+  ];
+  for (const selector of preferredSelectors) {
+    const node = document.querySelector(selector);
+    if (node && normalizeWebText(extractReadableText(node)).length >= 120) {
+      return node;
+    }
+  }
+
   const selectors = [
-    "article",
     "main",
     "[role='main']",
+    ".main-content",
     ".article",
     ".post",
-    ".entry-content",
-    ".content",
-    "body"
+    ".content"
   ];
-  let best = document.body;
-  let bestLength = 0;
+  let best = null;
+  let bestScore = 0;
   selectors.forEach((selector) => {
     document.querySelectorAll(selector).forEach((node) => {
-      const length = normalizeWebText(extractReadableText(node)).length;
-      if (length > bestLength) {
+      const text = normalizeWebText(extractReadableText(node));
+      const score = scoreReadableNode(node, text);
+      if (score > bestScore) {
         best = node;
-        bestLength = length;
+        bestScore = score;
       }
     });
   });
   return best || document.body;
+}
+
+function scoreReadableNode(node, text) {
+  const length = String(text || "").length;
+  if (length < 120) {
+    return 0;
+  }
+  const linkTextLength = Array.from(node.querySelectorAll("a"))
+    .reduce((sum, link) => sum + normalizeWebText(link.textContent || "").length, 0);
+  const linkPenalty = length > 0 ? Math.min(0.65, linkTextLength / length) : 0;
+  const paragraphBonus = Math.min(1200, node.querySelectorAll("p, h1, h2, h3, pre, code, blockquote, li").length * 40);
+  return length * (1 - linkPenalty) + paragraphBonus;
 }
 
 function extractReadableText(root) {
@@ -1195,8 +1226,59 @@ function extractReadableText(root) {
     return "";
   }
   const clone = root.cloneNode(true);
-  clone.querySelectorAll("script, style, noscript, iframe, svg, canvas, nav, footer, header, aside, form, button, input, textarea, select, [hidden], [aria-hidden='true']").forEach((node) => node.remove());
+  clone.querySelectorAll(getReadableNoiseSelector()).forEach((node) => node.remove());
   return clone.innerText || clone.textContent || "";
+}
+
+function getReadableNoiseSelector() {
+  return [
+    "script",
+    "style",
+    "noscript",
+    "iframe",
+    "svg",
+    "canvas",
+    "nav",
+    "footer",
+    "header",
+    "aside",
+    "form",
+    "button",
+    "input",
+    "textarea",
+    "select",
+    "[hidden]",
+    "[aria-hidden='true']",
+    ".toolbar",
+    ".comment",
+    ".comments",
+    ".recommend",
+    ".related",
+    ".sidebar",
+    ".side-bar",
+    ".breadcrumb",
+    ".pagination",
+    ".login",
+    ".user-info",
+    ".profile",
+    ".csdn-side-toolbar",
+    ".blog_container_aside",
+    ".passport-login-container",
+    ".more-toolbox",
+    ".article-info-box",
+    ".article-bar-top",
+    ".blog-tags-box",
+    ".operating",
+    ".recommend-box",
+    ".template-box",
+    "[class*='advert']",
+    "[class*='toolbar']",
+    "[class*='comment']",
+    "[class*='recommend']",
+    "[class*='sidebar']",
+    "[id*='comment']",
+    "[id*='recommend']"
+  ].join(",");
 }
 
 function normalizeWebText(text) {
