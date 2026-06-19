@@ -71,13 +71,13 @@ function bindEvents() {
     const payload = await ensurePayload();
     const settings = await getSettingsFromRuntime();
     const current = getCurrentOutput(payload, settings);
-    if (payload?.contentType === "web" && current.source !== "ai") {
+    if ((payload?.contentType === "web" || current.source === "manual") && current.source !== "ai") {
       if (!current.downloadText) {
-        setMessage("没有可下载的网页内容。");
+        setMessage(payload?.contentType === "web" ? "没有可下载的网页内容。" : "没有可下载的手动内容。");
         return;
       }
-      downloadTextFile(current.downloadText, `${sanitizeFileName(payload?.title || "web-clip")}.md`);
-      setMessage("已下载网页 Markdown。");
+      downloadTextFile(current.downloadText, `${sanitizeFileName(payload?.title || "manual-clip")}.md`);
+      setMessage(current.source === "manual" ? "已下载手动内容 Markdown。" : "已下载网页 Markdown。");
       return;
     }
     if (current.source === "ai") {
@@ -107,7 +107,8 @@ function bindEvents() {
     const resp = await sendToContent({
       type: "popup-send-obsidian",
       saveSource,
-      aiSummary: saveSource === "ai" ? el.aiSummary.value.trim() : ""
+      aiSummary: saveSource === "ai" ? el.aiSummary.value.trim() : "",
+      editedText: el.preview.value
     });
     if (!resp?.ok) {
       setMessage(`发送失败：${resp?.error || "未知错误"}`);
@@ -193,6 +194,36 @@ function bindEvents() {
   });
 }
 
+function getEditedPreviewText() {
+  return String(el.preview?.value || "").trim();
+}
+
+function hasEditedPreview(payload) {
+  const edited = getEditedPreviewText();
+  const original = String(payload?.txt || payload?.subtitlePreview || "").trim();
+  return Boolean(edited && edited !== original);
+}
+
+function buildManualClipDocument(payload, text) {
+  const title = String(payload?.title || "手动剪藏").trim();
+  const url = String(payload?.url || "").trim();
+  const lines = [
+    "---",
+    `title: "${escapeYaml(title)}"`,
+    `url: "${escapeYaml(url)}"`,
+    `created: "${formatLocalDate()}"`,
+    "---",
+    "",
+    `# ${title}`,
+    ""
+  ];
+  if (url) {
+    lines.push(`> Source: ${url}`, "");
+  }
+  lines.push("## 内容", "", String(text || "").trim());
+  return lines.join("\n").trim();
+}
+
 function getCurrentOutput(payload, settings = latestSettings) {
   const aiText = String(el.aiSummary.value || "").trim();
   if (selectedSaveSource === "ai" && aiText) {
@@ -202,6 +233,17 @@ function getCurrentOutput(payload, settings = latestSettings) {
       copyText: aiText,
       downloadText: buildAiSummaryDocument(payload, aiText),
       readText: aiText
+    };
+  }
+  const editedPreview = getEditedPreviewText();
+  if (hasEditedPreview(payload)) {
+    const doc = buildManualClipDocument(payload, editedPreview);
+    return {
+      source: "manual",
+      label: "手动内容 Markdown",
+      copyText: doc,
+      downloadText: doc,
+      readText: editedPreview
     };
   }
   if (payload?.contentType === "web") {
@@ -339,14 +381,14 @@ async function summarizeCurrentSubtitle() {
     setMessage("请先在设置中启用 AI 总结。");
     return;
   }
-  const text = payload?.txt || payload?.subtitlePreview || "";
+  const text = getEditedPreviewText() || payload?.txt || payload?.subtitlePreview || "";
   if (!text.trim()) {
     setMessage(payload?.contentType === "web" ? "没有可总结网页内容，请先刷新。" : "没有可总结字幕，请先刷新。");
     return;
   }
 
   setAiBusy(true);
-  setStatus("AI 正在分析字幕...");
+  setStatus(payload?.contentType === "web" ? "AI 正在分析网页内容..." : "AI 正在分析内容...");
   setMessage("");
   try {
     const resp = await sendToRuntime({
