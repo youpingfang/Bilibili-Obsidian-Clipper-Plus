@@ -1143,7 +1143,7 @@ function extractWebPageContent() {
   const siteName = pickMetaContent("og:site_name") || location.hostname;
   const description = pickMetaContent("description") || pickMetaContent("og:description") || "";
   const main = pickReadableRoot();
-  const text = normalizeArticleBodyText(extractReadableText(main), title);
+  const text = extractReadableMarkdown(main, title);
   return {
     title: String(title).trim(),
     url: cleanVideoUrl(),
@@ -1252,6 +1252,128 @@ function scoreReadableNode(node, text) {
   const densityBonus = Math.min(1, paragraphDensity) * 900;
   const paragraphBonus = Math.min(1400, paragraphs.length * 45);
   return length + densityBonus + paragraphBonus + headingBonus + semanticBonus - linkPenalty;
+}
+
+
+function extractReadableMarkdown(root, title = "") {
+  if (!root) {
+    return "";
+  }
+  const clone = root.cloneNode(true);
+  clone.querySelectorAll(getReadableNoiseSelector()).forEach((node) => node.remove());
+  const lines = [];
+  appendReadableMarkdownLines(clone, lines);
+  return normalizeArticleBodyText(lines.join("\n"), title);
+}
+
+function appendReadableMarkdownLines(root, lines) {
+  Array.from(root.childNodes || []).forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = normalizeInlineText(node.textContent || "");
+      if (text) {
+        lines.push(text);
+      }
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+
+    const tag = node.tagName.toLowerCase();
+    if (tag === "img") {
+      const image = buildImageMarkdown(node);
+      if (image) {
+        lines.push(image);
+      }
+      return;
+    }
+    if (/^h[1-6]$/.test(tag)) {
+      const level = Math.min(6, Math.max(2, Number(tag.slice(1)) + 1));
+      const text = normalizeInlineText(node.textContent || "");
+      if (text) {
+        lines.push(`${"#".repeat(level)} ${text}`);
+      }
+      return;
+    }
+    if (tag === "p" || tag === "blockquote") {
+      const text = normalizeInlineText(node.textContent || "");
+      if (text) {
+        lines.push(tag === "blockquote" ? `> ${text}` : text);
+      }
+      node.querySelectorAll("img").forEach((img) => {
+        const image = buildImageMarkdown(img);
+        if (image) {
+          lines.push(image);
+        }
+      });
+      return;
+    }
+    if (tag === "pre") {
+      const text = String(node.textContent || "").trim();
+      if (text) {
+        lines.push("```", text, "```");
+      }
+      return;
+    }
+    if (tag === "li") {
+      const text = normalizeInlineText(node.textContent || "");
+      if (text) {
+        lines.push(`- ${text}`);
+      }
+      node.querySelectorAll("img").forEach((img) => {
+        const image = buildImageMarkdown(img);
+        if (image) {
+          lines.push(image);
+        }
+      });
+      return;
+    }
+
+    appendReadableMarkdownLines(node, lines);
+  });
+}
+
+function buildImageMarkdown(img) {
+  const src = resolveImageSrc(img);
+  if (!src) {
+    return "";
+  }
+  const alt = normalizeInlineText(img.getAttribute("alt") || img.getAttribute("title") || "image");
+  return `![${escapeMarkdownImageAlt(alt || "image")}](${src})`;
+}
+
+function resolveImageSrc(img) {
+  const candidates = [
+    img.getAttribute("src"),
+    img.getAttribute("data-src"),
+    img.getAttribute("data-original"),
+    img.getAttribute("data-actualsrc"),
+    img.getAttribute("data-lazy-src"),
+    img.currentSrc
+  ];
+  const srcset = img.getAttribute("srcset") || img.getAttribute("data-srcset") || "";
+  if (srcset) {
+    const first = srcset.split(",")[0]?.trim().split(/\s+/)[0];
+    candidates.push(first);
+  }
+  const raw = candidates.map((item) => String(item || "").trim()).find(Boolean);
+  if (!raw || raw.startsWith("data:")) {
+    return "";
+  }
+  try {
+    return new URL(raw, location.href).href;
+  } catch {
+    return raw;
+  }
+}
+
+function normalizeInlineText(value) {
+  return String(value || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function escapeMarkdownImageAlt(value) {
+  return String(value || "").replace(/[\[\]]/g, "");
 }
 
 function extractReadableText(root) {
