@@ -15,7 +15,7 @@ Bilibili Obsidian Clipper Plus 是一个面向 Obsidian 的浏览器剪藏增强
 这个版本在原有“抓取 B 站字幕并保存到 Obsidian”的基础上，加入了 YouTube 字幕抓取、网页剪藏、AI 总结和更稳定的页面内弹窗体验：
 
 - 支持 B 站视频页字幕抓取，自动识别当前视频和分 P。
-- 支持 YouTube 视频页字幕抓取，尽量读取作者字幕和自动生成字幕。
+- 支持 YouTube 视频页字幕抓取，尽量读取作者字幕、自动生成字幕和中文自动翻译字幕。
 - 支持普通网页正文读取，可把文章、教程、博客等网页内容整理成 Markdown。
 - 支持将 B 站字幕、YouTube 字幕或网页正文交给 AI 生成总结。
 - 弹窗改为页面内显示：点击扩展图标后，窗口会出现在当前页面右上角。
@@ -28,7 +28,7 @@ Bilibili Obsidian Clipper Plus 是一个面向 Obsidian 的浏览器剪藏增强
 ## 功能
 
 - B 站字幕抓取：在视频页读取字幕轨，预览后复制、下载或保存到 Obsidian。
-- YouTube 字幕抓取：在 YouTube 视频页读取可用字幕轨，复用预览、AI 总结、下载和 Obsidian 保存流程。
+- YouTube 字幕抓取：在 YouTube 视频页读取可用字幕轨，并优先提供中文自动翻译字幕，复用预览、AI 总结、下载和 Obsidian 保存流程。
 - 网页正文剪藏：在普通网页中提取标题、正文和页面链接，生成适合 Obsidian 的 Markdown。
 - AI 总结：支持对字幕或网页正文进行总结，并可继续复制、下载、阅读或保存。
 - Obsidian 写入：通过 Local REST API 一键保存到指定笔记目录。

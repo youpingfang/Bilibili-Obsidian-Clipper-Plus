@@ -4788,25 +4788,97 @@ function parseJsonObjectAt(text, startIndex) {
 }
 
 function getYouTubeCaptionTracks(playerResponse) {
-  const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
-  return tracks
-    .map((item, index) => {
-      const name = item?.name?.simpleText || (Array.isArray(item?.name?.runs) ? item.name.runs.map((run) => run.text || "").join("") : "");
-      const lang = String(item?.languageCode || "").trim();
-      const isAuto = String(item?.kind || "").toLowerCase() === "asr";
-      return {
-        id: `youtube-${lang || index}-${isAuto ? "asr" : "manual"}`,
-        lan: lang || "unknown",
-        lanDoc: `${name || lang || "unknown"}${isAuto ? " 自动生成" : ""}`.trim(),
-        subtitleUrl: normalizeYouTubeCaptionUrl(item?.baseUrl || ""),
-        source: "youtube",
-        isAuto
-      };
-    })
+  const tracklist = playerResponse?.captions?.playerCaptionsTracklistRenderer || {};
+  const tracks = Array.isArray(tracklist.captionTracks) ? tracklist.captionTracks : [];
+  const translationLanguages = Array.isArray(tracklist.translationLanguages)
+    ? tracklist.translationLanguages
+    : [];
+
+  const baseTracks = tracks
+    .map((item, index) => mapYouTubeCaptionTrack(item, index))
+    .filter((item) => item.subtitleUrl);
+
+  const translatedTracks = buildYouTubeTranslatedCaptionTracks(baseTracks, translationLanguages);
+  return [...translatedTracks, ...baseTracks];
+}
+
+function mapYouTubeCaptionTrack(item, index) {
+  const name = item?.name?.simpleText || (Array.isArray(item?.name?.runs) ? item.name.runs.map((run) => run.text || "").join("") : "");
+  const lang = String(item?.languageCode || "").trim();
+  const isAuto = String(item?.kind || "").toLowerCase() === "asr";
+  return {
+    id: `youtube-${lang || index}-${isAuto ? "asr" : "manual"}`,
+    lan: lang || "unknown",
+    lanDoc: `${name || lang || "unknown"}${isAuto ? " 自动生成" : ""}`.trim(),
+    subtitleUrl: normalizeYouTubeCaptionUrl(item?.baseUrl || ""),
+    source: "youtube",
+    isAuto,
+    isTranslated: false
+  };
+}
+
+function buildYouTubeTranslatedCaptionTracks(baseTracks, translationLanguages) {
+  if (!Array.isArray(baseTracks) || baseTracks.length === 0) {
+    return [];
+  }
+  const source = pickYouTubeTranslationSourceTrack(baseTracks);
+  if (!source?.subtitleUrl) {
+    return [];
+  }
+
+  const languages = getPreferredYouTubeTranslationLanguages(translationLanguages);
+  return languages
+    .map((lang) => ({
+      id: `${source.id}-translate-${lang.code}`,
+      lan: lang.code,
+      lanDoc: `翻译：${lang.label}`,
+      subtitleUrl: normalizeYouTubeCaptionUrl(source.subtitleUrl, lang.code),
+      source: "youtube-translate",
+      isAuto: source.isAuto,
+      isTranslated: true
+    }))
     .filter((item) => item.subtitleUrl);
 }
 
-function normalizeYouTubeCaptionUrl(url) {
+function pickYouTubeTranslationSourceTrack(baseTracks) {
+  const tracks = baseTracks || [];
+  return (
+    tracks.find((item) => String(item.lan || "").toLowerCase().startsWith("en")) ||
+    tracks.find((item) => item.isAuto) ||
+    tracks[0]
+  );
+}
+
+function getPreferredYouTubeTranslationLanguages(translationLanguages) {
+  const mapped = (translationLanguages || [])
+    .map((item) => {
+      const code = String(item?.languageCode || "").trim();
+      const label = item?.languageName?.simpleText ||
+        (Array.isArray(item?.languageName?.runs) ? item.languageName.runs.map((run) => run.text || "").join("") : "") ||
+        code;
+      return { code, label: String(label || code).trim() };
+    })
+    .filter((item) => item.code);
+
+  const preferredCodes = ["zh-Hans", "zh-CN", "zh", "zh-Hant", "zh-TW"];
+  const preferred = [];
+  const seen = new Set();
+  for (const code of preferredCodes) {
+    const exact = mapped.find((item) => item.code.toLowerCase() === code.toLowerCase());
+    if (exact && !seen.has(exact.code)) {
+      preferred.push(exact);
+      seen.add(exact.code);
+    }
+  }
+
+  // YouTube 大多数页面会声明可翻译语言；没有声明时仍尝试常用中文参数。
+  if (preferred.length === 0) {
+    preferred.push({ code: "zh-Hans", label: "中文（简体）" });
+  }
+  return preferred;
+}
+
+function normalizeYouTubeCaptionUrl(url, targetLang = "") {
   const text = normalizeSubtitleUrl(String(url || ""));
   if (!text) {
     return "";
@@ -4814,6 +4886,9 @@ function normalizeYouTubeCaptionUrl(url) {
   try {
     const parsed = new URL(text);
     parsed.searchParams.set("fmt", "json3");
+    if (targetLang) {
+      parsed.searchParams.set("tlang", targetLang);
+    }
     return parsed.toString();
   } catch {
     return text;
@@ -5418,15 +5493,18 @@ async function tryLoadSubtitleCandidates(candidates, runId, forceRefresh) {
 
 function isAiSubtitle(item) {
   const lan = String(item?.lan || "").toLowerCase();
-  // B站 AI 自动字幕的 lan 以 "ai-" 开头
-  return lan.startsWith("ai-");
+  // B站 AI 自动字幕的 lan 以 "ai-" 开头；YouTube 自动/翻译字幕也标记出来。
+  return lan.startsWith("ai-") || item?.isAuto === true || item?.isTranslated === true;
 }
 
 function subtitlePriority(item) {
   const lan = String(item?.lan || "").toLowerCase();
   const label = String(item?.lanDoc || "").toLowerCase();
 
-  // 优先级：中文（包含 AI 中文）-> 英文 -> 其他
+  // 优先级：中文翻译 -> 中文原轨（包含 AI 中文）-> 英文 -> 其他
+  if (item?.isTranslated === true && (lan.includes("zh") || label.includes("中文"))) {
+    return -1;
+  }
   if (lan === "zh-cn" || lan === "zh-hans") {
     return 0;
   }
