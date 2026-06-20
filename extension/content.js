@@ -164,6 +164,26 @@ function isBilibiliClipPage(url = location.href) {
   }
 }
 
+function isYouTubeClipPage(url = location.href) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    return (host === "youtube.com" || host === "m.youtube.com") && parsed.pathname === "/watch";
+  } catch {
+    return false;
+  }
+}
+
+function getCurrentContentType(url = location.href) {
+  if (isBilibiliClipPage(url)) {
+    return "bilibili";
+  }
+  if (isYouTubeClipPage(url)) {
+    return "youtube";
+  }
+  return "web";
+}
+
 function getReaderContentMaxPx() {
   if (state.readingContentWidth === "compact") {
     return 680;
@@ -808,7 +828,7 @@ function startUrlWatcher() {
 }
 
 function resetClipState() {
-  state.contentType = isBilibiliClipPage() ? "bilibili" : "web";
+  state.contentType = getCurrentContentType();
   state.bvid = "";
   state.aid = "";
   state.cid = "";
@@ -1136,6 +1156,62 @@ async function refreshWebClip(runId) {
   renderSubtitleSelect();
   byId(ids.preview).value = web.text;
   setStatus("网页内容抓取完成，可以复制或发送到 Obsidian。");
+}
+
+
+async function refreshYouTubeClip(runId) {
+  ensureRunActive(runId);
+  state.contentType = "youtube";
+  const videoId = extractYouTubeVideoId(location.href);
+  if (!videoId) {
+    throw new Error("当前页面不是标准 YouTube 视频地址，无法抓取字幕。");
+  }
+
+  const meta = readYouTubeMeta(videoId);
+  state.bvid = videoId;
+  state.aid = "";
+  state.cid = videoId;
+  state.cidSource = "youtube";
+  state.pageIndex = 1;
+  state.pageCount = 0;
+  state.pageTitle = "";
+  state.title = meta.title || document.title.replace(/ - YouTube$/i, "").trim();
+  state.author = meta.author || "YouTube";
+  state.uploadDate = meta.uploadDate || "";
+  state.description = meta.description || "";
+  state.videoDuration = meta.duration || readRuntimeVideoDuration();
+  state.currentClipSignature = computeCurrentClipSignature();
+
+  setStatus("正在获取 YouTube 可用字幕...");
+  state.subtitles = normalizeSubtitleTracks(getYouTubeCaptionTracks(meta.playerResponse));
+  state.chapters = normalizeChapters([]);
+
+  if (state.subtitles.length === 0) {
+    applyNoSubtitleState();
+    renderMeta();
+    renderSubtitleSelect();
+    setStatus("当前 YouTube 视频没有可用字幕，或字幕轨暂时不可读取。");
+    return;
+  }
+
+  const preferred = pickPreferredSubtitle(state.subtitles, {
+    previousId: state.selectedSubtitleId,
+    previousUrl: state.selectedSubtitleUrl,
+    previousLang: state.selectedSubtitleLang
+  });
+  const selected = await tryLoadSubtitleCandidates(buildSubtitleCandidates(state.subtitles, preferred), runId, true);
+  ensureRunActive(runId);
+  state.subtitleFetchState = "ready";
+  renderMeta();
+  renderSubtitleSelect();
+  if (state.readingViewOpen) {
+    renderReadingView();
+    renderReadingStatus("YouTube 字幕抓取完成。");
+    startReadingViewSync();
+    syncReadingViewPlayback(true);
+  }
+  logInfo("[BOC] selected YouTube subtitle track", selected);
+  setStatus("YouTube 字幕抓取完成，可以复制、下载或发送到 Obsidian。");
 }
 
 function extractWebPageContent() {
@@ -1520,9 +1596,10 @@ async function refreshClip() {
   try {
     setBusyState(true);
     setMessage("");
-    const isWebClip = !isBilibiliClipPage(location.href);
-    state.contentType = isWebClip ? "web" : "bilibili";
-    setStatus(isWebClip ? "正在抓取网页内容..." : "正在抓取视频信息...");
+    const contentType = getCurrentContentType(location.href);
+    const isWebClip = contentType === "web";
+    state.contentType = contentType;
+    setStatus(isWebClip ? "正在抓取网页内容..." : contentType === "youtube" ? "正在抓取 YouTube 视频信息..." : "正在抓取视频信息...");
     state.subtitleFetchState = "loading";
     if (state.readingViewOpen) {
       renderReadingView();
@@ -1532,6 +1609,11 @@ async function refreshClip() {
 
     if (isWebClip) {
       await refreshWebClip(runId);
+      return;
+    }
+
+    if (contentType === "youtube") {
+      await refreshYouTubeClip(runId);
       return;
     }
 
@@ -1932,6 +2014,20 @@ function renderMeta() {
       <div class="boc-meta-item"><strong>URL：</strong>${escapeHtml(cleanVideoUrl())}</div>
       <div class="boc-meta-item"><strong>站点：</strong>${escapeHtml(state.author || "未知")}</div>
       <div class="boc-meta-item"><strong>字数：</strong>${escapeHtml(String(state.txt.length))}</div>
+    `;
+    return;
+  }
+
+  if (state.contentType === "youtube") {
+    if (!state.bvid) {
+      meta.innerHTML = '<div class="boc-meta-item">尚未抓取 YouTube 视频信息</div>';
+      return;
+    }
+    meta.innerHTML = `
+      <div class="boc-meta-item"><strong>标题：</strong>${escapeHtml(state.title || "未命名视频")}</div>
+      <div class="boc-meta-item"><strong>URL：</strong>${escapeHtml(cleanVideoUrl())}</div>
+      <div class="boc-meta-item"><strong>作者：</strong>${escapeHtml(state.author || "未知")}</div>
+      <div class="boc-meta-item"><strong>字幕轨：</strong>${escapeHtml(String(state.subtitles.length))}</div>
     `;
     return;
   }
@@ -4484,6 +4580,9 @@ function updateReaderFollowState() {
 }
 
 function computeCurrentClipSignature(url = location.href) {
+  if (isYouTubeClipPage(url)) {
+    return ["youtube", extractYouTubeVideoId(url)].map((item) => String(item || "").trim()).join("|");
+  }
   const bvid = extractBvid(url);
   const page = extractPageIndex(url);
   return [bvid, page].map((item) => String(item || "").trim()).join("|");
@@ -4587,6 +4686,140 @@ function byId(id) {
   return node;
 }
 
+
+function extractYouTubeVideoId(url = location.href) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") {
+      return parsed.pathname.split("/").filter(Boolean)[0] || "";
+    }
+    if (host === "youtube.com" || host === "m.youtube.com") {
+      return String(parsed.searchParams.get("v") || "").trim();
+    }
+  } catch {
+    // ignore invalid URL
+  }
+  return "";
+}
+
+function readYouTubeMeta(videoId) {
+  const playerResponse = getYouTubePlayerResponse();
+  const details = playerResponse?.videoDetails || {};
+  const micro = playerResponse?.microformat?.playerMicroformatRenderer || {};
+  return {
+    playerResponse,
+    title: String(details.title || micro.title?.simpleText || document.title.replace(/ - YouTube$/i, "")).trim(),
+    author: String(details.author || micro.ownerChannelName || "").trim(),
+    description: String(details.shortDescription || micro.description?.simpleText || "").trim(),
+    uploadDate: String(micro.uploadDate || micro.publishDate || "").trim(),
+    duration: Number(details.lengthSeconds || 0) || readRuntimeVideoDuration(),
+    videoId
+  };
+}
+
+function getYouTubePlayerResponse() {
+  const fromWindow = globalThis.ytInitialPlayerResponse;
+  if (fromWindow?.captions || fromWindow?.videoDetails) {
+    return fromWindow;
+  }
+
+  const scripts = Array.from(document.scripts || []);
+  for (const script of scripts) {
+    const text = script.textContent || "";
+    const marker = "ytInitialPlayerResponse";
+    const start = text.indexOf(marker);
+    if (start < 0) {
+      continue;
+    }
+    const equals = text.indexOf("=", start);
+    if (equals < 0) {
+      continue;
+    }
+    const parsed = parseJsonObjectAt(text, equals + 1);
+    if (parsed?.captions || parsed?.videoDetails) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function parseJsonObjectAt(text, startIndex) {
+  let start = startIndex;
+  while (start < text.length && /\s/.test(text[start])) {
+    start += 1;
+  }
+  if (text[start] !== "{") {
+    return null;
+  }
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      depth += 1;
+    } else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function getYouTubeCaptionTracks(playerResponse) {
+  const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+  return tracks
+    .map((item, index) => {
+      const name = item?.name?.simpleText || (Array.isArray(item?.name?.runs) ? item.name.runs.map((run) => run.text || "").join("") : "");
+      const lang = String(item?.languageCode || "").trim();
+      const isAuto = String(item?.kind || "").toLowerCase() === "asr";
+      return {
+        id: `youtube-${lang || index}-${isAuto ? "asr" : "manual"}`,
+        lan: lang || "unknown",
+        lanDoc: `${name || lang || "unknown"}${isAuto ? " 自动生成" : ""}`.trim(),
+        subtitleUrl: normalizeYouTubeCaptionUrl(item?.baseUrl || ""),
+        source: "youtube",
+        isAuto
+      };
+    })
+    .filter((item) => item.subtitleUrl);
+}
+
+function normalizeYouTubeCaptionUrl(url) {
+  const text = normalizeSubtitleUrl(String(url || ""));
+  if (!text) {
+    return "";
+  }
+  try {
+    const parsed = new URL(text);
+    parsed.searchParams.set("fmt", "json3");
+    return parsed.toString();
+  } catch {
+    return text;
+  }
+}
+
 function extractBvid(url) {
   const match = url.match(/\/video\/(BV[0-9A-Za-z]+)/);
   if (match?.[1]) {
@@ -4609,6 +4842,10 @@ function extractBvid(url) {
 function cleanVideoUrl(href = location.href) {
   try {
     const parsed = new URL(href);
+    if (isYouTubeClipPage(href)) {
+      const videoId = extractYouTubeVideoId(href);
+      return videoId ? `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}` : href;
+    }
     if (parsed.hostname !== "www.bilibili.com") {
       return href;
     }
@@ -5270,7 +5507,101 @@ function readRuntimeVideoDuration() {
 
 async function fetchSubtitleBody(url) {
   logInfo("[BOC] fetch subtitle body", { url });
+  if (isYouTubeSubtitleUrl(url)) {
+    const text = await fetchTextInBackground(url);
+    return { body: parseYouTubeSubtitleText(text) };
+  }
   return fetchJsonInBackground(url);
+}
+
+function isYouTubeSubtitleUrl(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host.endsWith("youtube.com") || host.endsWith("googlevideo.com");
+  } catch {
+    return false;
+  }
+}
+
+function parseYouTubeSubtitleText(text) {
+  const raw = String(text || "").trim();
+  if (!raw) {
+    return [];
+  }
+
+  if (raw.startsWith("{")) {
+    try {
+      return parseYouTubeJson3(JSON.parse(raw));
+    } catch (error) {
+      logWarn("[BOC] failed to parse YouTube json3 subtitle", error);
+    }
+  }
+
+  return parseYouTubeXmlSubtitle(raw);
+}
+
+function parseYouTubeJson3(data) {
+  return (Array.isArray(data?.events) ? data.events : [])
+    .map((event) => {
+      const content = (Array.isArray(event?.segs) ? event.segs : [])
+        .map((seg) => seg?.utf8 || "")
+        .join("")
+        .replace(/\s+\n/g, "\n")
+        .replace(/\n\s+/g, "\n")
+        .trim();
+      const from = Number(event?.tStartMs || 0) / 1000;
+      const duration = Number(event?.dDurationMs || 0) / 1000;
+      return {
+        from,
+        to: from + Math.max(duration, 0.1),
+        content
+      };
+    })
+    .filter((item) => item.content && Number.isFinite(item.from) && Number.isFinite(item.to));
+}
+
+function parseYouTubeXmlSubtitle(text) {
+  let doc = null;
+  try {
+    doc = new DOMParser().parseFromString(text, "text/xml");
+  } catch {
+    return [];
+  }
+  return Array.from(doc.querySelectorAll("text, p"))
+    .map((node) => {
+      const start = Number(node.getAttribute("start") || node.getAttribute("t") || 0);
+      const dur = Number(node.getAttribute("dur") || node.getAttribute("d") || 0);
+      const usesMs = node.hasAttribute("t") || node.hasAttribute("d");
+      const from = usesMs ? start / 1000 : start;
+      const duration = usesMs ? dur / 1000 : dur;
+      return {
+        from,
+        to: from + Math.max(duration, 0.1),
+        content: decodeHtmlEntities(node.textContent || "").trim()
+      };
+    })
+    .filter((item) => item.content && Number.isFinite(item.from) && Number.isFinite(item.to));
+}
+
+function decodeHtmlEntities(value) {
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = String(value || "");
+  return textarea.value;
+}
+
+async function fetchTextInBackground(url) {
+  try {
+    const resp = await sendRuntimeMessage({ type: "fetch-text", url });
+    if (!resp?.ok) {
+      throw new Error(toReadableText(resp?.error, "Background fetch failed"));
+    }
+    return String(resp.text || "");
+  } catch (error) {
+    if (isExtensionContextInvalidated(error)) {
+      throw new Error("扩展刚刚更新，请刷新当前页面后重试。");
+    }
+    throw error;
+  }
 }
 
 async function fetchJson(url) {
@@ -5389,8 +5720,7 @@ function buildMarkdown(meta, body, settings) {
   );
   const frontMatter = buildFrontMatter(meta, settings, created, tagsYaml);
 
-  const page = extractPageIndex(location.href);
-  const embedIframe = buildBilibiliEmbedIframe(meta, page);
+  const embedIframe = buildVideoEmbedIframe(meta);
 
   const lines = [];
   if (frontMatter) {
@@ -5418,8 +5748,7 @@ function buildAiSummaryMarkdown(meta, summary, settings) {
   const compactWithHours = shouldShowHoursInNote(meta, meta.subtitleBody || []);
   const chapterLines = buildChapterLines(meta.chapters || [], compactWithHours);
   const frontMatter = buildFrontMatter(meta, settings, created, tagsYaml);
-  const page = extractPageIndex(location.href);
-  const embedIframe = buildBilibiliEmbedIframe(meta, page);
+  const embedIframe = buildVideoEmbedIframe(meta);
   const summaryText = String(summary || "").trim();
 
   const lines = [];
@@ -5649,7 +5978,12 @@ function buildChapterLines(chapters, withHours = false) {
   });
 }
 
-function buildBilibiliEmbedIframe(meta, page = 1) {
+function buildVideoEmbedIframe(meta) {
+  if (meta?.contentType === "youtube") {
+    const safeVideoId = encodeURIComponent(String(meta?.bvid || "").trim());
+    return `<iframe src="https://www.youtube.com/embed/${safeVideoId}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="height:100%;width:100%; aspect-ratio: 16 / 9;"></iframe>`;
+  }
+  const page = extractPageIndex(location.href);
   const safeAid = encodeURIComponent(String(meta?.aid || "").trim());
   const safeBvid = encodeURIComponent(String(meta?.bvid || "").trim());
   const safeCid = encodeURIComponent(String(meta?.cid || "").trim());
@@ -5758,9 +6092,9 @@ function buildNoteFilename(meta) {
     baseParts.push(formatLocalDate());
   }
 
-  baseParts.push(meta.title || meta.bvid || (meta.contentType === "web" ? "web-clip" : "bilibili-subtitle"));
+  baseParts.push(meta.title || meta.bvid || (meta.contentType === "web" ? "web-clip" : meta.contentType === "youtube" ? "youtube-subtitle" : "bilibili-subtitle"));
 
-  if (meta.contentType !== "web" && Number(meta.pageCount) > 1) {
+  if (meta.contentType === "bilibili" && Number(meta.pageCount) > 1) {
     baseParts.push(`P${Number(meta.pageIndex) > 0 ? Number(meta.pageIndex) : 1}`);
     const pageTitle = String(meta.pageTitle || "").trim();
     if (pageTitle) {
@@ -5769,7 +6103,7 @@ function buildNoteFilename(meta) {
   }
 
   const baseName = sanitizeFileName(baseParts.filter(Boolean).join("-"));
-  return `${baseName || (meta.contentType === "web" ? "web-clip" : "bilibili-subtitle")}.md`;
+  return `${baseName || (meta.contentType === "web" ? "web-clip" : meta.contentType === "youtube" ? "youtube-subtitle" : "bilibili-subtitle")}.md`;
 }
 
 function normalizeFolder(input) {

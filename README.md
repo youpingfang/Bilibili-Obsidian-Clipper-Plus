@@ -1,4 +1,4 @@
-# Bilibili Obsidian Clipper Plus｜一键保存B站字幕增强版
+# Bilibili Obsidian Clipper Plus｜一键保存B站/YouTube字幕增强版
 
 [![GitHub all releases downloads](https://img.shields.io/github/downloads/youpingfang/Bilibili-Obsidian-Clipper-Plus/total?style=flat-square&logo=github&label=downloads)](https://github.com/youpingfang/Bilibili-Obsidian-Clipper-Plus/releases)
 [![Chrome Web Store users](https://img.shields.io/chrome-web-store/users/jokophbofiphenlplmohabdcmalcbenl?style=flat-square&logo=google-chrome&logoColor=white&label=chrome)](https://chromewebstore.google.com/detail/jokophbofiphenlplmohabdcmalcbenl)
@@ -6,17 +6,18 @@
 
 推荐官方插件市场下载：[Chrome](https://chromewebstore.google.com/detail/jokophbofiphenlplmohabdcmalcbenl?utm_source=item-share-cb) · [Edge](https://microsoftedge.microsoft.com/addons/detail/fbeeapnjdjgacilaobonekidbfjcmdjo) · [Firefox](https://addons.mozilla.org/addon/bilibili-obsidian-clipper-plus/)
 
-Bilibili Obsidian Clipper Plus 是一个面向 Obsidian 的浏览器剪藏增强版：既可以在 B 站视频页抓取字幕、生成 AI 总结并保存到 Obsidian，也可以在普通网页中读取正文内容，整理成 Markdown 后复制、下载或写入 Obsidian。
+Bilibili Obsidian Clipper Plus 是一个面向 Obsidian 的浏览器剪藏增强版：既可以在 B 站和 YouTube 视频页抓取字幕、生成 AI 总结并保存到 Obsidian，也可以在普通网页中读取正文内容，整理成 Markdown 后复制、下载或写入 Obsidian。
 
-> 注意：仅支持获取“有字幕轨”的 B 站视频字幕（播放器里有「字幕」选项，通常表示作者上传了外挂字幕或平台提供了 AI 字幕）；没有字幕轨的视频无法获取字幕。
+> 注意：仅支持获取“有字幕轨”的 B 站 / YouTube 视频字幕；没有字幕轨、字幕被限制或页面暂未加载出字幕信息的视频无法获取字幕。
 
 ## Plus 增强内容
 
-这个版本在原有“抓取 B 站字幕并保存到 Obsidian”的基础上，加入了网页剪藏、AI 总结和更稳定的页面内弹窗体验：
+这个版本在原有“抓取 B 站字幕并保存到 Obsidian”的基础上，加入了 YouTube 字幕抓取、网页剪藏、AI 总结和更稳定的页面内弹窗体验：
 
 - 支持 B 站视频页字幕抓取，自动识别当前视频和分 P。
+- 支持 YouTube 视频页字幕抓取，尽量读取作者字幕和自动生成字幕。
 - 支持普通网页正文读取，可把文章、教程、博客等网页内容整理成 Markdown。
-- 支持将 B 站字幕或网页正文交给 AI 生成总结。
+- 支持将 B 站字幕、YouTube 字幕或网页正文交给 AI 生成总结。
 - 弹窗改为页面内显示：点击扩展图标后，窗口会出现在当前页面右上角。
 - 切换到其他标签页时，弹窗不会自动消失，已抓取的字幕、网页内容和 AI 总结会保留。
 - 弹窗采用左右双栏：左边是原始内容，右边是 AI 总结。
@@ -27,6 +28,7 @@ Bilibili Obsidian Clipper Plus 是一个面向 Obsidian 的浏览器剪藏增强
 ## 功能
 
 - B 站字幕抓取：在视频页读取字幕轨，预览后复制、下载或保存到 Obsidian。
+- YouTube 字幕抓取：在 YouTube 视频页读取可用字幕轨，复用预览、AI 总结、下载和 Obsidian 保存流程。
 - 网页正文剪藏：在普通网页中提取标题、正文和页面链接，生成适合 Obsidian 的 Markdown。
 - AI 总结：支持对字幕或网页正文进行总结，并可继续复制、下载、阅读或保存。
 - Obsidian 写入：通过 Local REST API 一键保存到指定笔记目录。
@@ -63,7 +65,7 @@ Bilibili Obsidian Clipper Plus 是一个面向 Obsidian 的浏览器剪藏增强
    ```
 
 5. 不要选择项目根目录 `Bilibili-Obsidian-Clipper-Plus`，否则会出现“清单文件缺失或不可读取 / 无法加载清单”的错误。
-6. 修改代码后，回到扩展管理页点击该扩展的“重新加载”按钮，再刷新 B 站视频页面。
+6. 修改代码后，回到扩展管理页点击该扩展的“重新加载”按钮，再刷新 B 站或 YouTube 视频页面。
 
 ### Chrome / Edge
 

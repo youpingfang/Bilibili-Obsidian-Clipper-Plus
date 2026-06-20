@@ -287,7 +287,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "fetch-json") {
+  if (message.type === "fetch-json" || message.type === "fetch-text") {
     const url = typeof message.url === "string" ? message.url : "";
     if (!url) {
       sendResponse({ ok: false, error: "Missing subtitle URL" });
@@ -295,9 +295,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 
     const isBiliRequest = /(?:api\.bilibili\.com|hdslb\.com)/.test(url);
+    const isYouTubeRequest = /(?:youtube\.com|googlevideo\.com)/.test(url);
     const headers = new Headers();
-    if (isBiliRequest) {
-      headers.set("Accept", "application/json, text/plain, */*");
+    if (isBiliRequest || isYouTubeRequest) {
+      headers.set("Accept", message.type === "fetch-text" ? "text/plain, application/json, */*" : "application/json, text/plain, */*");
       headers.set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
       headers.set("Cache-Control", "no-cache");
       headers.set("Pragma", "no-cache");
@@ -314,6 +315,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (isBiliRequest) {
       fetchOptions.referrer = "https://www.bilibili.com/";
       fetchOptions.referrerPolicy = "strict-origin-when-cross-origin";
+    } else if (isYouTubeRequest) {
+      fetchOptions.referrer = "https://www.youtube.com/";
+      fetchOptions.referrerPolicy = "strict-origin-when-cross-origin";
     }
 
     fetch(url, fetchOptions)
@@ -324,6 +328,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
 
         const text = await response.text();
+        if (message.type === "fetch-text") {
+          sendResponse({ ok: true, text });
+          return;
+        }
         try {
           const data = JSON.parse(text);
           sendResponse({ ok: true, data });
