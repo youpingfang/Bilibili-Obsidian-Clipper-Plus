@@ -1167,7 +1167,7 @@ async function refreshYouTubeClip(runId) {
     throw new Error("当前页面不是标准 YouTube 视频地址，无法抓取字幕。");
   }
 
-  const meta = readYouTubeMeta(videoId);
+  const meta = await readYouTubeMeta(videoId);
   state.bvid = videoId;
   state.aid = "";
   state.cid = videoId;
@@ -4703,8 +4703,11 @@ function extractYouTubeVideoId(url = location.href) {
   return "";
 }
 
-function readYouTubeMeta(videoId) {
-  const playerResponse = getYouTubePlayerResponse();
+async function readYouTubeMeta(videoId) {
+  const pagePlayerResponse = getYouTubePlayerResponseFromText(document.documentElement?.innerHTML || "") || getYouTubePlayerResponseFromWindow();
+  const playerResponse = hasYouTubeCaptionTracks(pagePlayerResponse)
+    ? pagePlayerResponse
+    : await fetchYouTubePlayerResponseFromWatchPage(videoId, pagePlayerResponse);
   const details = playerResponse?.videoDetails || {};
   const micro = playerResponse?.microformat?.playerMicroformatRenderer || {};
   return {
@@ -4718,30 +4721,72 @@ function readYouTubeMeta(videoId) {
   };
 }
 
-function getYouTubePlayerResponse() {
+function getYouTubePlayerResponseFromWindow() {
   const fromWindow = globalThis.ytInitialPlayerResponse;
-  if (fromWindow?.captions || fromWindow?.videoDetails) {
-    return fromWindow;
+  return fromWindow?.captions || fromWindow?.videoDetails ? fromWindow : null;
+}
+
+function getYouTubePlayerResponseFromText(text) {
+  const source = String(text || "");
+  const direct = parseYouTubePlayerResponseAssignment(source);
+  if (direct) {
+    return direct;
   }
 
-  const scripts = Array.from(document.scripts || []);
-  for (const script of scripts) {
-    const text = script.textContent || "";
-    const marker = "ytInitialPlayerResponse";
-    const start = text.indexOf(marker);
-    if (start < 0) {
-      continue;
-    }
-    const equals = text.indexOf("=", start);
-    if (equals < 0) {
-      continue;
-    }
-    const parsed = parseJsonObjectAt(text, equals + 1);
-    if (parsed?.captions || parsed?.videoDetails) {
-      return parsed;
+  // Some YouTube HTML variants embed playerResponse as an escaped JSON string.
+  const escapedMatch = source.match(/ytInitialPlayerResponse\s*[:=]\s*(\{(?:\\.|[^<])*?\})\s*(?:;|<\/script>)/);
+  if (escapedMatch?.[1]) {
+    try {
+      const unescaped = escapedMatch[1]
+        .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
+      const parsed = JSON.parse(unescaped);
+      if (parsed?.captions || parsed?.videoDetails) {
+        return parsed;
+      }
+    } catch {
+      // ignore and fall through
     }
   }
   return null;
+}
+
+function parseYouTubePlayerResponseAssignment(source) {
+  const marker = "ytInitialPlayerResponse";
+  let searchFrom = 0;
+  while (searchFrom < source.length) {
+    const start = source.indexOf(marker, searchFrom);
+    if (start < 0) {
+      break;
+    }
+    const equals = source.indexOf("=", start);
+    if (equals < 0) {
+      break;
+    }
+    const parsed = parseJsonObjectAt(source, equals + 1);
+    if (parsed?.captions || parsed?.videoDetails) {
+      return parsed;
+    }
+    searchFrom = start + marker.length;
+  }
+  return null;
+}
+
+function hasYouTubeCaptionTracks(playerResponse) {
+  const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  return Array.isArray(tracks) && tracks.length > 0;
+}
+
+async function fetchYouTubePlayerResponseFromWatchPage(videoId, fallback = null) {
+  const url = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&hl=zh-CN&persist_hl=1`;
+  try {
+    const html = await fetchTextInBackground(url);
+    const parsed = getYouTubePlayerResponseFromText(html);
+    return parsed || fallback || null;
+  } catch (error) {
+    logWarn("[BOC] failed to fetch YouTube watch html fallback", error);
+    return fallback || null;
+  }
 }
 
 function parseJsonObjectAt(text, startIndex) {

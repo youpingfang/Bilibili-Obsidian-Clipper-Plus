@@ -298,7 +298,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const isYouTubeRequest = /(?:youtube\.com|googlevideo\.com)/.test(url);
     const headers = new Headers();
     if (isBiliRequest || isYouTubeRequest) {
-      headers.set("Accept", message.type === "fetch-text" ? "text/plain, application/json, */*" : "application/json, text/plain, */*");
+      headers.set("Accept", message.type === "fetch-text" ? "text/html, text/plain, application/json, */*" : "application/json, text/plain, */*");
       headers.set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
       headers.set("Cache-Control", "no-cache");
       headers.set("Pragma", "no-cache");
