@@ -875,7 +875,7 @@ function toggleEmbeddedPopup(tabId) {
   const sourceTabId = Number(tabId || 0) || 0;
   const query = sourceTabId ? `?tabId=${encodeURIComponent(sourceTabId)}&embedded=1` : "?embedded=1";
   frame.src = chrome.runtime.getURL(`popup.html${query}`);
-  frame.title = "Bilibili Obsidian Clipper";
+  frame.title = "Bilibili Obsidian Clipper Plus";
   frame.style.cssText = "position:absolute;inset:0;width:640px;height:560px;border:0;display:block;background:#f1f1f1;border-radius:14px";
   host.appendChild(frame);
   appendEmbeddedPopupDragHandle(host);

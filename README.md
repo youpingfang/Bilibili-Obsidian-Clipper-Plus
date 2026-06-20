@@ -1,10 +1,10 @@
-# Bilibili Obsidian Clipper｜一键保存B站字幕
+# Bilibili Obsidian Clipper Plus｜一键保存B站字幕
 
-[![GitHub all releases downloads](https://img.shields.io/github/downloads/haixiong1997/Bilibili-Obsidian-Clipper/total?style=flat-square&logo=github&label=downloads)](https://github.com/haixiong1997/Bilibili-Obsidian-Clipper/releases)
+[![GitHub all releases downloads](https://img.shields.io/github/downloads/youpingfang/Bilibili-Obsidian-Clipper-Plus/total?style=flat-square&logo=github&label=downloads)](https://github.com/youpingfang/Bilibili-Obsidian-Clipper-Plus/releases)
 [![Chrome Web Store users](https://img.shields.io/chrome-web-store/users/jokophbofiphenlplmohabdcmalcbenl?style=flat-square&logo=google-chrome&logoColor=white&label=chrome)](https://chromewebstore.google.com/detail/jokophbofiphenlplmohabdcmalcbenl)
-[![GitHub release](https://img.shields.io/github/v/release/haixiong1997/Bilibili-Obsidian-Clipper?style=flat-square&label=version)](https://github.com/haixiong1997/Bilibili-Obsidian-Clipper/releases)
+[![GitHub release](https://img.shields.io/github/v/release/youpingfang/Bilibili-Obsidian-Clipper-Plus?style=flat-square&label=version)](https://github.com/youpingfang/Bilibili-Obsidian-Clipper-Plus/releases)
 
-推荐官方插件市场下载：[Chrome](https://chromewebstore.google.com/detail/jokophbofiphenlplmohabdcmalcbenl?utm_source=item-share-cb) · [Edge](https://microsoftedge.microsoft.com/addons/detail/fbeeapnjdjgacilaobonekidbfjcmdjo) · [Firefox](https://addons.mozilla.org/addon/bilibili-obsidian-clipper/)
+推荐官方插件市场下载：[Chrome](https://chromewebstore.google.com/detail/jokophbofiphenlplmohabdcmalcbenl?utm_source=item-share-cb) · [Edge](https://microsoftedge.microsoft.com/addons/detail/fbeeapnjdjgacilaobonekidbfjcmdjo) · [Firefox](https://addons.mozilla.org/addon/bilibili-obsidian-clipper-plus/)
 
 在 B 站视频页抓取字幕，预览后可复制 Markdown、下载字幕文件，并一键写入 Obsidian（Local REST API）。
 
@@ -41,7 +41,7 @@
 
 ## 功能图片演示
 
-![Bilibili Obsidian Clipper 功能演示](docs/images/feature-demo-v2.png)
+![Bilibili Obsidian Clipper Plus 功能演示](docs/images/feature-demo-v2.png)
 
 ## 安装方式
 
@@ -49,7 +49,7 @@
 
 如果你是从 GitHub clone 或下载本项目源码，请注意：浏览器要加载的是项目里面的 `extension/` 目录，不是项目根目录。
 
-> 也就是说，选择文件夹时请选 `Bilibili-Obsidian-Clipper/extension`。如果选了外层的 `Bilibili-Obsidian-Clipper`，浏览器会提示清单文件缺失或加载失败。
+> 也就是说，选择文件夹时请选 `Bilibili-Obsidian-Clipper-Plus/extension`。如果选了外层的 `Bilibili-Obsidian-Clipper-Plus`，浏览器会提示清单文件缺失或加载失败。
 
 1. 打开扩展管理页：
    - Chrome：`chrome://extensions/`
@@ -59,10 +59,10 @@
 4. 选择这个目录：
 
    ```text
-   Bilibili-Obsidian-Clipper/extension
+   Bilibili-Obsidian-Clipper-Plus/extension
    ```
 
-5. 不要选择项目根目录 `Bilibili-Obsidian-Clipper`，否则会出现“清单文件缺失或不可读取 / 无法加载清单”的错误。
+5. 不要选择项目根目录 `Bilibili-Obsidian-Clipper-Plus`，否则会出现“清单文件缺失或不可读取 / 无法加载清单”的错误。
 6. 修改代码后，回到扩展管理页点击该扩展的“重新加载”按钮，再刷新 B 站视频页面。
 
 ### Chrome / Edge

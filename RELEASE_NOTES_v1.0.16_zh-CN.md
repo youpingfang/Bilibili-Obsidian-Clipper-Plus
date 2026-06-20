@@ -1,4 +1,4 @@
-# Bilibili Obsidian Clipper v1.0.16 发布说明
+# Bilibili Obsidian Clipper Plus v1.0.16 发布说明
 
 本次更新主要新增了「自定义属性」能力，让导出到 Obsidian 的字幕笔记更容易贴合个人工作流；同时补充了输入校验、兼容性和设置页体验优化。
 

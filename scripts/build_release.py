@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 EXTENSION_DIR = ROOT / "extension"
 RELEASE_DIR = ROOT / "release"
 MANIFEST_PATH = EXTENSION_DIR / "manifest.json"
-PACKAGE_NAME = "bilibili-obsidian-clipper"
+PACKAGE_NAME = "bilibili-obsidian-clipper-plus"
 
 
 def load_manifest():
@@ -44,7 +44,7 @@ def build_variant(manifest: dict, browser: str, version: str):
         background["service_worker"] = "background.js"
     elif browser == "firefox":
         gecko = variant_manifest.setdefault("browser_specific_settings", {}).setdefault("gecko", {})
-        gecko.setdefault("id", "bilibili-obsidian-clipper@github.com")
+        gecko.setdefault("id", "bilibili-obsidian-clipper-plus@github.com")
         gecko.setdefault("strict_min_version", "109.0")
         background = variant_manifest.setdefault("background", {})
         background.pop("service_worker", None)

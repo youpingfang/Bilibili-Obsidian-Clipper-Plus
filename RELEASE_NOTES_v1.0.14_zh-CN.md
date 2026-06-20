@@ -1,4 +1,4 @@
-# Bilibili Obsidian Clipper v1.0.14 发布说明
+# Bilibili Obsidian Clipper Plus v1.0.14 发布说明
 
 本次更新主要修复了「稍后再看」页面抓字幕不稳定的问题，并补充了一些导出与兼容性优化。
 
