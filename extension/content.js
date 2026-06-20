@@ -1185,6 +1185,9 @@ async function refreshYouTubeClip(runId) {
   setStatus("正在获取 YouTube 可用字幕...");
   state.subtitles = normalizeSubtitleTracks(getYouTubeCaptionTracks(meta.playerResponse));
   state.chapters = normalizeChapters([]);
+  if (state.subtitles.length === 0) {
+    state.subtitles = normalizeSubtitleTracks(buildYouTubeCaptionTracksFromPageMenu(meta.playerResponse));
+  }
 
   if (state.subtitles.length === 0) {
     applyNoSubtitleState();
@@ -4704,7 +4707,11 @@ function extractYouTubeVideoId(url = location.href) {
 }
 
 async function readYouTubeMeta(videoId) {
-  const pagePlayerResponse = getYouTubePlayerResponseFromText(document.documentElement?.innerHTML || "") || getYouTubePlayerResponseFromWindow();
+  const runtimePlayerResponse = await getYouTubePlayerResponseFromPageContext();
+  const pagePlayerResponse =
+    runtimePlayerResponse ||
+    getYouTubePlayerResponseFromText(document.documentElement?.innerHTML || "") ||
+    getYouTubePlayerResponseFromWindow();
   const playerResponse = hasYouTubeCaptionTracks(pagePlayerResponse)
     ? pagePlayerResponse
     : await fetchYouTubePlayerResponseFromWatchPage(videoId, pagePlayerResponse);
@@ -4724,6 +4731,57 @@ async function readYouTubeMeta(videoId) {
 function getYouTubePlayerResponseFromWindow() {
   const fromWindow = globalThis.ytInitialPlayerResponse;
   return fromWindow?.captions || fromWindow?.videoDetails ? fromWindow : null;
+}
+
+async function getYouTubePlayerResponseFromPageContext() {
+  const eventId = `boc-yt-player-response-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const script = document.createElement("script");
+  script.textContent = `(() => {
+    const eventId = ${JSON.stringify(eventId)};
+    const parseMaybeJson = (value) => {
+      if (!value) return null;
+      if (typeof value === 'object') return value;
+      if (typeof value !== 'string') return null;
+      try { return JSON.parse(value); } catch (_) { return null; }
+    };
+    const candidates = [];
+    try { candidates.push(window.ytInitialPlayerResponse); } catch (_) {}
+    try {
+      const player = document.getElementById('movie_player') || document.querySelector('#movie_player');
+      if (player && typeof player.getPlayerResponse === 'function') candidates.push(player.getPlayerResponse());
+    } catch (_) {}
+    try { candidates.push(window.ytplayer && window.ytplayer.config && window.ytplayer.config.args && window.ytplayer.config.args.player_response); } catch (_) {}
+    try { candidates.push(window.ytcfg && window.ytcfg.get && window.ytcfg.get('PLAYER_RESPONSE')); } catch (_) {}
+    try { candidates.push(window.ytcfg && window.ytcfg.get && window.ytcfg.get('PLAYER_VARS') && window.ytcfg.get('PLAYER_VARS').player_response); } catch (_) {}
+    try { candidates.push(window.yt && window.yt.config_ && window.yt.config_.PLAYER_VARS && window.yt.config_.PLAYER_VARS.player_response); } catch (_) {}
+    const picked = candidates.map(parseMaybeJson).find((item) => item && (item.captions || item.videoDetails)) || null;
+    window.dispatchEvent(new CustomEvent(eventId, { detail: picked ? JSON.stringify(picked) : '' }));
+  })();`;
+
+  try {
+    const result = await new Promise((resolve) => {
+      const timer = window.setTimeout(() => {
+        window.removeEventListener(eventId, onResponse);
+        resolve(null);
+      }, 800);
+      function onResponse(event) {
+        window.clearTimeout(timer);
+        window.removeEventListener(eventId, onResponse);
+        try {
+          resolve(event?.detail ? JSON.parse(event.detail) : null);
+        } catch {
+          resolve(null);
+        }
+      }
+      window.addEventListener(eventId, onResponse, { once: true });
+      (document.documentElement || document.head || document.body).appendChild(script);
+      script.remove();
+    });
+    return result?.captions || result?.videoDetails ? result : null;
+  } catch (error) {
+    logWarn("[BOC] failed to read YouTube player response from page context", error);
+    return null;
+  }
 }
 
 function getYouTubePlayerResponseFromText(text) {
@@ -4845,6 +4903,41 @@ function getYouTubeCaptionTracks(playerResponse) {
 
   const translatedTracks = buildYouTubeTranslatedCaptionTracks(baseTracks, translationLanguages);
   return [...translatedTracks, ...baseTracks];
+}
+
+function buildYouTubeCaptionTracksFromPageMenu(playerResponse) {
+  const baseTracks = getYouTubeCaptionTracks(playerResponse);
+  if (baseTracks.length > 0) {
+    return baseTracks;
+  }
+
+  const videoId = extractYouTubeVideoId(location.href);
+  if (!videoId) {
+    return [];
+  }
+
+  const menuText = Array.from(document.querySelectorAll(".ytp-panel-menu, .ytp-caption-menu, .ytp-popup, .ytp-menuitem"))
+    .map((node) => node.textContent || "")
+    .join("\n");
+  const hasChinese = /中文|简体|繁体|Chinese/i.test(menuText);
+  if (!hasChinese) {
+    return [];
+  }
+
+  const url = new URL("https://www.youtube.com/api/timedtext");
+  url.searchParams.set("v", videoId);
+  url.searchParams.set("lang", "en");
+  url.searchParams.set("tlang", "zh-Hans");
+  url.searchParams.set("fmt", "json3");
+  return [{
+    id: "youtube-menu-translate-zh-Hans",
+    lan: "zh-Hans",
+    lanDoc: "翻译：中文（简体）",
+    subtitleUrl: url.toString(),
+    source: "youtube-menu-translate",
+    isAuto: true,
+    isTranslated: true
+  }];
 }
 
 function mapYouTubeCaptionTrack(item, index) {
