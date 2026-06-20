@@ -1,4 +1,4 @@
-# Bilibili Obsidian Clipper Plus｜一键保存B站字幕
+# Bilibili Obsidian Clipper Plus｜一键保存B站字幕增强版
 
 [![GitHub all releases downloads](https://img.shields.io/github/downloads/youpingfang/Bilibili-Obsidian-Clipper-Plus/total?style=flat-square&logo=github&label=downloads)](https://github.com/youpingfang/Bilibili-Obsidian-Clipper-Plus/releases)
 [![Chrome Web Store users](https://img.shields.io/chrome-web-store/users/jokophbofiphenlplmohabdcmalcbenl?style=flat-square&logo=google-chrome&logoColor=white&label=chrome)](https://chromewebstore.google.com/detail/jokophbofiphenlplmohabdcmalcbenl)
@@ -6,32 +6,32 @@
 
 推荐官方插件市场下载：[Chrome](https://chromewebstore.google.com/detail/jokophbofiphenlplmohabdcmalcbenl?utm_source=item-share-cb) · [Edge](https://microsoftedge.microsoft.com/addons/detail/fbeeapnjdjgacilaobonekidbfjcmdjo) · [Firefox](https://addons.mozilla.org/addon/bilibili-obsidian-clipper-plus/)
 
-在 B 站视频页抓取字幕，预览后可复制 Markdown、下载字幕文件，并一键写入 Obsidian（Local REST API）。
+Bilibili Obsidian Clipper Plus 是一个面向 Obsidian 的浏览器剪藏增强版：既可以在 B 站视频页抓取字幕、生成 AI 总结并保存到 Obsidian，也可以在普通网页中读取正文内容，整理成 Markdown 后复制、下载或写入 Obsidian。
 
 > 注意：仅支持获取“有字幕轨”的 B 站视频字幕（播放器里有「字幕」选项，通常表示作者上传了外挂字幕或平台提供了 AI 字幕）；没有字幕轨的视频无法获取字幕。
 
-## 本版本主要修改
+## Plus 增强内容
 
-这个版本在原有“抓取 B 站字幕并保存到 Obsidian”的基础上，重点增加了 AI 总结和更稳定的弹窗体验：
+这个版本在原有“抓取 B 站字幕并保存到 Obsidian”的基础上，加入了网页剪藏、AI 总结和更稳定的页面内弹窗体验：
 
-- 弹窗改为页面内显示：点击扩展图标后，窗口会出现在当前 B 站页面右上角。
-- 切换到其他标签页时，弹窗不会自动消失，已抓取的字幕和 AI 总结内容会保留。
-- 点击页面空白区域会关闭弹窗；保存到 Obsidian 成功后也会自动关闭。
-- 弹窗支持拖动位置，也支持从四周拖拽进行整体等比缩放。
-- 弹窗采用左右双栏：左边是原始字幕，右边是 AI 总结。
-- 点击 `总结` 后，会把当前字幕交给你配置的 AI 模型生成总结。
-- 底部的 `复制 / 下载 / 阅读 / 保存到 Obsidian` 会根据你当前选择的栏目执行：选左边就是处理字幕，选右边就是处理 AI 总结。
+- 支持 B 站视频页字幕抓取，自动识别当前视频和分 P。
+- 支持普通网页正文读取，可把文章、教程、博客等网页内容整理成 Markdown。
+- 支持将 B 站字幕或网页正文交给 AI 生成总结。
+- 弹窗改为页面内显示：点击扩展图标后，窗口会出现在当前页面右上角。
+- 切换到其他标签页时，弹窗不会自动消失，已抓取的字幕、网页内容和 AI 总结会保留。
+- 弹窗采用左右双栏：左边是原始内容，右边是 AI 总结。
+- 底部的 `复制 / 下载 / 阅读 / 保存到 Obsidian` 会根据当前选择的栏目执行：可处理原文，也可处理 AI 总结。
 - 设置页支持配置 DeepSeek / OpenAI-compatible API、模型和常用提示词。
 - AI API Key 只保存在浏览器本机，其他普通配置会同步到浏览器账号。
 
 ## 功能
 
-- B 站视频字幕抓取，支持自动识别当前分 P。
-- 字幕预览、复制 Markdown、下载 `srt/txt` 文件。
-- 一键保存到 Obsidian（Local REST API）。
-- AI 总结字幕，可把原字幕或 AI 总结保存到 Obsidian。
-- 页面内弹窗不怕切标签页，内容不会突然丢失。
-- 弹窗可拖动、可整体缩放，方便边看视频边整理内容。
+- B 站字幕抓取：在视频页读取字幕轨，预览后复制、下载或保存到 Obsidian。
+- 网页正文剪藏：在普通网页中提取标题、正文和页面链接，生成适合 Obsidian 的 Markdown。
+- AI 总结：支持对字幕或网页正文进行总结，并可继续复制、下载、阅读或保存。
+- Obsidian 写入：通过 Local REST API 一键保存到指定笔记目录。
+- 阅读视图：把字幕、网页正文或 AI 总结切换成更适合长文阅读的沉浸式布局。
+- 页面内弹窗：支持拖动、整体缩放，切换标签页后内容不丢失。
 
 ### 阅读视图（v1.0.18+）
 
@@ -116,14 +116,27 @@
 
 ## 使用方式
 
+### B 站字幕保存
+
 1. 打开任意 B 站视频页，点击浏览器工具栏里的扩展图标。
 2. 弹窗会出现在当前页面右上角，并自动抓取字幕。
 3. 左侧查看原始字幕，右侧点击 `总结` 生成 AI 总结。
-4. 想移动窗口时，按住弹窗顶部拖动即可。
-5. 想调整大小时，拖动弹窗四周或四个角，整个窗口会一起放大或缩小。
-6. 点击左侧字幕栏时，底部按钮会处理原字幕；点击右侧 AI 总结栏时，底部按钮会处理 AI 总结。
-7. 切换到其他标签页时弹窗不会丢，回到原视频页还能继续使用。
-8. 点击页面空白区域会关闭弹窗；点击 `保存到 Obsidian` 成功后也会自动关闭。
+4. 点击左侧字幕栏时，底部按钮会处理原字幕；点击右侧 AI 总结栏时，底部按钮会处理 AI 总结。
+5. 可直接 `复制`、`下载`、进入 `阅读` 视图，或点击 `保存到 Obsidian` 写入笔记。
+
+### 网页正文剪藏
+
+1. 打开普通网页、文章页、教程页或博客页面，点击浏览器工具栏里的扩展图标。
+2. 插件会尝试读取当前网页标题、正文和链接，并整理成 Markdown。
+3. 如果页面结构复杂，可以在弹窗里检查内容后再复制、下载或保存。
+4. 点击 `总结` 可以让 AI 对网页正文生成摘要，再把摘要保存到 Obsidian。
+
+### 弹窗操作
+
+- 按住弹窗顶部可以拖动位置。
+- 拖动弹窗四周或四个角可以整体放大或缩小。
+- 切换到其他标签页时弹窗内容不会丢，回到原页面还能继续使用。
+- 点击页面空白区域会关闭弹窗；点击 `保存到 Obsidian` 成功后也会自动关闭。
 
 ## 视频教程
 
