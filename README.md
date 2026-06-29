@@ -4,7 +4,6 @@
 [![Chrome Web Store users](https://img.shields.io/chrome-web-store/users/jokophbofiphenlplmohabdcmalcbenl?style=flat-square&logo=google-chrome&logoColor=white&label=chrome)](https://chromewebstore.google.com/detail/jokophbofiphenlplmohabdcmalcbenl)
 [![GitHub release](https://img.shields.io/github/v/release/youpingfang/Bilibili-Obsidian-Clipper-Plus?style=flat-square&label=version)](https://github.com/youpingfang/Bilibili-Obsidian-Clipper-Plus/releases)
 
-推荐官方插件市场下载：[Chrome](https://chromewebstore.google.com/detail/jokophbofiphenlplmohabdcmalcbenl?utm_source=item-share-cb) · [Edge](https://microsoftedge.microsoft.com/addons/detail/fbeeapnjdjgacilaobonekidbfjcmdjo) · [Firefox](https://addons.mozilla.org/addon/bilibili-obsidian-clipper-plus/)
 
 Bilibili Obsidian Clipper Plus 是一个面向 Obsidian 的浏览器剪藏增强版：既可以在 B 站视频页抓取字幕、生成 AI 总结并保存到 Obsidian，也可以在普通网页中读取正文内容，整理成 Markdown 后复制、下载或写入 Obsidian。
 
